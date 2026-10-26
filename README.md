@@ -6,14 +6,16 @@ A basketball scores app built with Expo, Expo Router, and Expo UI. It uses the e
 
 ## Run a development build
 
-Use Node 22 or newer. iOS builds require Xcode and CocoaPods. Android builds require Android Studio and a configured emulator or device.
+Use Bun 1.2.22 or newer and Node 22 or newer for Expo's native tooling. iOS builds require Xcode and CocoaPods. Android builds require Android Studio and a configured emulator or device.
 
 ```sh
-npm install
-npm run ios
+bun install --frozen-lockfile
+bun run ios
 ```
 
-For Android, run `npm run android`. To reconnect an installed development build, run `npm start`. The app has its own application identifier, `dev.expo.basketball`.
+For Android, run `bun run android`. To reconnect an installed development build, run `bun start`. The app has its own application identifier, `dev.expo.basketball`.
+
+Commit dependency changes with `bun.lock`. Install Expo libraries with `bun expo install <package> --bun` so Expo selects compatible versions.
 
 The default API needs no credentials. Copy `.env.example` to `.env.local` only when changing the API URL or configuring a notification service. `EXPO_PUBLIC_*` values are visible in the app bundle. Keep provider credentials on your server.
 
@@ -26,10 +28,10 @@ Read the [implementation plan](docs/port-plan.md), [API reference](docs/api.md),
 ## Check the app
 
 ```sh
-npm run check
-npm run check:api
-npm run export
-npx expo-doctor
+bun run check
+bun run check:api
+bun run export
+bunx expo-doctor
 ```
 
 `check` runs TypeScript, behavior tests, and public-file checks. `check:api` validates responses from the deployed service. Read the [verification record](docs/verification.md) for native checks and remaining device requirements.

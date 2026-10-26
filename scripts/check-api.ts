@@ -1,6 +1,6 @@
 /// <reference types="node" />
 // Requests the live basketball API once per route and parses each answer with
-// the app's own schemas. Run: node --import tsx scripts/check-api.ts
+// the app's own schemas. Run: bun run check:api
 import {
   fetchGame,
   fetchLeaders,

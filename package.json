@@ -42,7 +42,6 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "~19.3.0",
-    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -52,12 +51,12 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "export": "expo export --platform all",
-    "test": "node --import tsx --test src/**/*.test.ts",
-    "check:public": "node scripts/check-public.mjs",
-    "check:api": "node --import tsx scripts/check-api.ts",
-    "check": "npm run typecheck && npm test && npm run check:public"
+    "test": "bun test",
+    "check:public": "bun scripts/check-public.mjs",
+    "check:api": "bun scripts/check-api.ts",
+    "check": "bun run typecheck && bun run test && bun run check:public"
   },
   "private": true,
-  "packageManager": "npm@10.9.8",
+  "packageManager": "bun@1.2.22",
   "license": "MIT"
 }

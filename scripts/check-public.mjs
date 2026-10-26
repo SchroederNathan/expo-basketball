@@ -9,7 +9,7 @@ const patterns = [
 ];
 const failures = [];
 for (const file of files) {
-  if (!/\.(?:md|mjs|ts|tsx|json|tsv|yml|yaml)$/.test(file) || file === 'package-lock.json') continue;
+  if (!/\.(?:md|mjs|ts|tsx|json|tsv|yml|yaml)$/.test(file)) continue;
   if (!statSync(file).isFile()) continue;
   const contents = readFileSync(file, 'utf8');
   for (const [label, pattern] of patterns) {

@@ -1,6 +1,7 @@
 {
   "build": {
     "development": {
+      "bun": "1.2.22",
       "developmentClient": true,
       "distribution": "internal",
       "ios": {
@@ -8,9 +9,11 @@
       }
     },
     "preview": {
+      "bun": "1.2.22",
       "distribution": "internal"
     },
     "production": {
+      "bun": "1.2.22",
       "autoIncrement": true
     }
   }
