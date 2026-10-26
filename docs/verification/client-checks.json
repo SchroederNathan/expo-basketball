@@ -1,0 +1,45 @@
+{
+  "recordedAt": "2026-10-26T18:22:28Z",
+  "checks": {
+    "npm run check": {
+      "result": "passed",
+      "tests": 38,
+      "failed": 0
+    },
+    "npm run check:api": {
+      "result": "passed",
+      "output": "typed-api-check.txt"
+    },
+    "npm run export": {
+      "result": "passed",
+      "platforms": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "staticWebRendering": true
+    },
+    "npx expo-doctor": {
+      "passed": 20,
+      "failed": 0
+    },
+    "npx react-doctor . --verbose": {
+      "errors": 0,
+      "warnings": 4,
+      "triage": "review.md"
+    }
+  },
+  "nativeRuntime": {
+    "platform": "ios",
+    "version": "26.5",
+    "runtime": "development build",
+    "report": "../verification.md"
+  },
+  "notVerified": [
+    "Android runtime",
+    "physical push delivery",
+    "live-game transitions",
+    "release performance",
+    "web browser interaction"
+  ]
+}

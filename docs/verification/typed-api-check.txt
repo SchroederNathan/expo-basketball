@@ -1,0 +1,23 @@
+Checking the basketball API for 20261026 in America/Toronto
+ok   nba scoreboard                     9 games (9 pre, 0 live, 0 final), poll 120s
+ok   wnba scoreboard                    1 games (1 pre, 0 live, 0 final), poll 120s
+ok   mens-college-basketball scoreboard 0 games (0 pre, 0 live, 0 final), poll 120s
+ok   womens-college-basketball scoreboard 0 games (0 pre, 0 live, 0 final), poll 120s
+ok   nba game 401909861                 LAL 132–123 UTAH Final, 2 box teams, 2 leaders, 5 period chips, 3 standings groups, flow
+ok   nba plays 401909861                451 items (438 plays, 13 dividers)
+ok   nba standings                      2026–27: Eastern / Western / Divisions
+ok   nba teams                          30 teams in 6 groups
+ok   nba team 13                        Los Angeles Lakers 3–0: 18 roster, 3 results, 10 upcoming
+ok   nba leaders points                 2026–27 PPG: 50 players
+ok   nba player 4065733                 Ty Jerome: 4 season stats, 7 recent games
+ok   nba search "curry"                 1 results: player Stephen Curry
+ok   wnba standings                     2 conferences, 0 divisions
+ok   wnba teams                         15 teams in 0 groups
+ok   wnba team 20                       Atlanta Dream: 14 roster, 10 results, 3 upcoming
+ok   mens-college-basketball standings  31 conferences, 0 divisions
+ok   mens-college-basketball teams      362 teams in 0 groups
+ok   mens-college-basketball team 2000  Abilene Christian Wildcats: 15 roster, 0 results, 0 upcoming
+ok   womens-college-basketball standings 31 conferences, 0 divisions
+ok   womens-college-basketball teams    362 teams in 0 groups
+ok   womens-college-basketball team 2000 Abilene Christian Wildcats: 13 roster, 0 results, 10 upcoming
+All API checks passed.
