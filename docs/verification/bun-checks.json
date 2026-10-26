@@ -1,0 +1,41 @@
+{
+  "recordedAt": "2026-10-26T18:28:20Z",
+  "packageManager": "bun@1.2.22",
+  "lockfile": "bun.lock",
+  "unchangedDirectRuntimeDependencies": 35,
+  "checks": {
+    "bun install --frozen-lockfile": {
+      "result": "passed"
+    },
+    "bun install --frozen-lockfile --force": {
+      "result": "passed"
+    },
+    "bun run check": {
+      "result": "passed",
+      "tests": 38,
+      "failed": 0,
+      "typecheck": "passed",
+      "publicFiles": "passed"
+    },
+    "bun run check:api": {
+      "result": "passed"
+    },
+    "bun expo install --check --bun": {
+      "result": "dependencies up to date"
+    },
+    "bun run export": {
+      "result": "passed",
+      "platforms": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "staticWebRendering": true
+    },
+    "bunx expo-doctor": {
+      "passed": 20,
+      "failed": 0
+    }
+  },
+  "nativeInteraction": "not repeated; no application UI or native dependency changed"
+}

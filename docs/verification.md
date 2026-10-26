@@ -2,7 +2,13 @@
 
 Checked on October 26, 2026 with an iOS 26.5 simulator and a local development build. Native projects are generated from app config. No hosted build, store submission, or deployment was performed.
 
-## Automated checks
+## Bun migration checks
+
+The package-manager migration passed `bun run check`, including TypeScript, all 38 tests, and public-file checks. `bun run check:api` passed against the deployed service. `bun run export` produced iOS, Android, and web bundles and rendered every static web route. `bunx expo-doctor` passed all 20 checks.
+
+The frozen Bun install passed after a forced reinstall. All 35 direct runtime dependencies retained their installed versions. The migration changed no application UI or native dependencies, so the earlier native interaction results below remain the available device evidence. See the [Bun receipt](verification/bun-checks.json) and [migration diary](diary/2026-10-26-bun.md).
+
+## Initial client checks
 
 | Check | Result |
 | --- | --- |
