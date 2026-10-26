@@ -1,0 +1,12 @@
+{
+  "recordedAt": "2026-10-26T16:37:59.379946+00:00",
+  "result": "BUILD SUCCEEDED",
+  "configuration": "Debug development client",
+  "bundleIdentifier": "dev.expo.basketball",
+  "icon": "assets/icon.png",
+  "iconSha256": "4e1109212fc12705251b291b8e447f40807a08826c08110be8f8fe38d3d3be90",
+  "nativeIconSha256": "e2fe111b989fd9dc9f1f3fe77a8c0f3d1ae1f01b9ae7cb0defe9882407b9470e",
+  "nativeIconSize": "1024x1024",
+  "opaque": true,
+  "expoDoctor": "20/20 passed"
+}

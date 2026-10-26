@@ -1,0 +1,12 @@
+{
+  "initial_project_type": "empty repository",
+  "is_react_native": false,
+  "is_expo": false,
+  "is_native_ios": false,
+  "is_native_android": false,
+  "package_manager": null,
+  "initial_build_commands": [],
+  "initial_qa_tooling": [],
+  "node": "22.23.1",
+  "npm": "10.9.8"
+}

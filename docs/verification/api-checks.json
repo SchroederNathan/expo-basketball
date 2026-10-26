@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-26",
+  "baseUrl": "https://lob-api.expo.app/api",
+  "method": "GET",
+  "status": 200,
+  "routes": ["scoreboard", "games/:id", "games/:id/plays", "standings", "teams", "teams/:id", "players", "players/:id", "search"],
+  "scoreboardLeagues": ["nba", "wnba", "mens-college-basketball", "womens-college-basketball"],
+  "completedGame": "401909861",
+  "scope": "Read-only service reachability and top-level response inspection. Schema parsing and client behavior are checked separately.",
+  "liveGameObserved": false
+}

@@ -1,0 +1,18 @@
+{
+  "recordedAt": "2026-10-26T16:21:02.480997+00:00",
+  "platform": "iOS Simulator",
+  "configuration": "Debug development client",
+  "sdk": "Expo SDK 58",
+  "bundleIdentifier": "dev.expo.basketball",
+  "nativeBuildResult": "BUILD SUCCEEDED",
+  "executableSha256": "fa27d3cbbc2cd9bc371b061b2c64c97b7c7d4a91a9fa8c8def1b40c155a8b125",
+  "modules": [
+    "expo-dev-client",
+    "@expo/ui",
+    "expo-notifications",
+    "expo-secure-store",
+    "react-native-svg",
+    "expo-linear-gradient"
+  ],
+  "scope": "Native compilation and installation only. Screen behavior is checked separately."
+}
