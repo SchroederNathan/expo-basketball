@@ -15,7 +15,7 @@ Checked on October 26, 2026 with an iOS 26.5 simulator and a local development b
 
 The tests cover calendar validation, daylight saving, polling policy, league-pinned entity links, API failures and mismatched responses, plays and standings views, cached refresh failures, offline content, push payloads, and preference drafts. They do not prove native notification delivery.
 
-The API check used completed NBA game 401909861, Lakers 132 to Jazz 123, and parsed 451 play items. No live game was present during the checks. Today's scoreboard returned nine NBA games and one WNBA game, all upcoming, and empty college scoreboards. The earlier [HTTP receipt](verification/api-checks.json) records reachability only; the later typed check validates the responses.
+The API check used completed NBA game 401909861, Lakers 132 to Jazz 123, and parsed 451 play items. No live game was present during the checks. Today's scoreboard returned nine NBA games and one WNBA game, all upcoming, and empty college scoreboards. The earlier [HTTP receipt](verification/api-checks.json) records reachability only; the later [typed check](verification/typed-api-check.txt) validates the responses.
 
 ## Native interaction
 

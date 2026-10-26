@@ -10,6 +10,6 @@ React Compiler rejected a loop without a test in the preference conflict handler
 
 Native checks covered the day strip, calendar selection outside the paging window, horizontal day swipes, completed and upcoming games, play-period filters, team schedules, tab history, WNBA conference filters, college standings, stat leaders, player profiles, and search. Searching for curry returned Stephen Curry and opened his profile. An unmatched query showed the empty state. The [verification record](../verification.md) distinguishes these checks from push delivery, Android interaction, and release performance.
 
-The development client's floating tools button covered trailing header actions. The app hides it in native development builds through the supported dev-client API. Metro still opens the developer menu. This change keeps the notification control and modal dismissal reachable while testing.
+The development client's floating tools button covered trailing header actions. The app hides it in native development builds through the supported dev-client API. Metro still opens the developer menu. This change keeps the notification control and modal dismissal reachable while testing. A compiler check rejected the first dynamic import inside the effect. The final implementation uses a static import and calls it only in native development builds.
 
 The public repository contains the separate app, neutral architecture notes, and verification records. Provider credentials, installation credentials, and machine paths stay outside it. The sports API remains unchanged.

@@ -1,5 +1,6 @@
 import { BarlowCondensed_700Bold_Italic } from '@expo-google-fonts/barlow-condensed/700Bold_Italic';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { setToolsButtonVisible } from 'expo-dev-client';
 import { useFonts } from 'expo-font';
 import { DarkTheme, SplashScreen, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -38,7 +39,7 @@ export default function RootLayout() {
     void hydratePreferredLeague();
     // The floating tools button covers the native header's trailing action.
     if (__DEV__ && Platform.OS !== 'web') {
-      void import('expo-dev-client').then(({ setToolsButtonVisible }) => setToolsButtonVisible(false));
+      setToolsButtonVisible(false);
     }
   }, []);
 
