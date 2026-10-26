@@ -4,6 +4,7 @@ import { useFonts } from 'expo-font';
 import { DarkTheme, SplashScreen, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { Platform } from 'react-native';
 import { DisplayFontProvider } from '@/components/display-text';
 import { PushResponseBridge } from '@/notifications/bridge';
 import { hydratePreferredLeague, usePreferencesHydrated } from '@/state/preferences';
@@ -35,6 +36,10 @@ export default function RootLayout() {
   useEffect(() => {
     connectQueryLifecycle();
     void hydratePreferredLeague();
+    // The floating tools button covers the native header's trailing action.
+    if (__DEV__ && Platform.OS !== 'web') {
+      void import('expo-dev-client').then(({ setToolsButtonVisible }) => setToolsButtonVisible(false));
+    }
   }, []);
 
   useEffect(() => {
