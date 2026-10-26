@@ -38,6 +38,23 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "44a06072-fb9b-4334-ba72-29e7c2d61bc6"
+      }
+    },
+    "owner": "exponathan",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/44a06072-fb9b-4334-ba72-29e7c2d61bc6"
     }
   }
 }
