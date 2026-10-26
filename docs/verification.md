@@ -8,6 +8,14 @@ The package-manager migration passed `bun run check`, including TypeScript, all 
 
 The frozen Bun install passed after a forced reinstall. All 35 direct runtime dependencies retained their installed versions. The migration changed no application UI or native dependencies, so the earlier native interaction results below remain the available device evidence. See the [Bun receipt](verification/bun-checks.json) and [migration diary](diary/2026-10-26-bun.md).
 
+## EAS Update setup checks
+
+EAS CLI linked the separate Expo project and generated its update configuration. Remote development, preview, and production channels each point to a branch with the same name. The preview build profile resolves with matching channel and environment settings.
+
+Generated iOS and Android configuration contains the correct update URL, enabled updates, and runtime 1.0.0. Frozen install, TypeScript, 38 tests, public-file checks, all-platform exports, and Expo Doctor 20/20 passed after the updates module was added. See the [setup receipt](verification/eas-update-checks.json).
+
+No update was published or cloud build started. Existing clients require a rebuild. OTA download and activation remain untested until a compatible update is published and loaded by that new binary. The [EAS Update guide](eas-update.md) records those steps.
+
 ## Initial client checks
 
 | Check | Result |

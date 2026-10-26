@@ -1,0 +1,53 @@
+{
+  "recordedAt": "2026-10-26T18:35:11Z",
+  "project": "https://expo.dev/accounts/exponathan/projects/expo-basketball",
+  "projectId": "44a06072-fb9b-4334-ba72-29e7c2d61bc6",
+  "easCli": "25.3.0",
+  "expoUpdates": "58.0.18",
+  "runtimePolicy": "appVersion",
+  "runtimeVersion": "1.0.0",
+  "channels": {
+    "production": {
+      "branch": "production",
+      "publishedUpdateGroups": 0
+    },
+    "preview": {
+      "branch": "preview",
+      "publishedUpdateGroups": 0
+    },
+    "development": {
+      "branch": "development",
+      "publishedUpdateGroups": 0
+    }
+  },
+  "checks": {
+    "bun install --frozen-lockfile": "passed",
+    "bun run check": {
+      "typecheck": "passed",
+      "tests": 38,
+      "failed": 0,
+      "publicFiles": "passed"
+    },
+    "bun run eas config --platform ios --profile preview --json": "matching preview channel and environment",
+    "bun expo config --type introspect --json": {
+      "ios": "correct update URL, enabled, runtime 1.0.0",
+      "android": "correct update URL, enabled, runtime 1.0.0"
+    },
+    "bun run export": {
+      "platforms": [
+        "ios",
+        "android",
+        "web"
+      ],
+      "staticWebRendering": "passed"
+    },
+    "bunx expo-doctor": {
+      "passed": 20,
+      "failed": 0
+    },
+    "bun run update:preview --help": "script forwards channel, environment, platform and arguments"
+  },
+  "publication": "none",
+  "cloudBuildsStarted": 0,
+  "otaDelivery": "not tested; requires rebuilt client and published compatible update"
+}

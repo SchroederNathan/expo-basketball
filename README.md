@@ -36,6 +36,20 @@ bunx expo-doctor
 
 `check` runs TypeScript, behavior tests, and public-file checks. `check:api` validates responses from the deployed service. Read the [verification record](docs/verification.md) for native checks and remaining device requirements.
 
+## EAS Update
+
+The app is linked to [exponathan/expo-basketball](https://expo.dev/accounts/exponathan/projects/expo-basketball). Build profiles use matching development, preview, and production channels and environments.
+
+Rebuild an existing development client once with `bun run ios` or `bun run android` to include the updates module and project configuration. Preview published updates through the development client's Extensions UI.
+
+To publish a preview update after building a compatible client:
+
+```sh
+bun run update:preview --message "Describe the change"
+```
+
+The [EAS Update guide](docs/eas-update.md) covers runtime compatibility, build profiles, and production publishing.
+
 ## Data and artwork
 
 Basketball data and remote team and player images come from third-party services. Their availability does not grant ownership of league or team marks. This repository does not contain sports data snapshots or provider credentials.

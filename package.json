@@ -55,7 +55,11 @@
     "test": "bun test",
     "check:public": "bun scripts/check-public.mjs",
     "check:api": "bun scripts/check-api.ts",
-    "check": "bun run typecheck && bun run test && bun run check:public"
+    "check": "bun run typecheck && bun run test && bun run check:public",
+    "eas": "bunx eas-cli@25.3.0",
+    "update:development": "bun run eas update --channel development --environment development --platform all",
+    "update:preview": "bun run eas update --channel preview --environment preview --platform all",
+    "update:production": "bun run eas update --channel production --environment production --platform all"
   },
   "private": true,
   "packageManager": "bun@1.2.22",
