@@ -23,6 +23,17 @@ The default API needs no credentials. Copy `.env.example` to `.env.local` only w
 
 Read the [implementation plan](docs/port-plan.md), [API reference](docs/api.md), [development diaries](docs/diary/README.md), and [decision trail](docs/decisions.tsv).
 
+## Check the app
+
+```sh
+npm run check
+npm run check:api
+npm run export
+npx expo-doctor
+```
+
+`check` runs TypeScript, behavior tests, and public-file checks. `check:api` validates responses from the deployed service. Read the [verification record](docs/verification.md) for native checks and remaining device requirements.
+
 ## Data and artwork
 
 Basketball data and remote team and player images come from third-party services. Their availability does not grant ownership of league or team marks. This repository does not contain sports data snapshots or provider credentials.
