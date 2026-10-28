@@ -3,6 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { usePlayer } from '@/api/queries';
 import type { GameLogRow, PlayerPage } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
+import { Screen } from '@/components/screen';
 import { DisplayText } from '@/components/display-text';
 import { Headshot } from '@/components/headshot';
 import { InfoRows } from '@/components/info-rows';
@@ -142,7 +143,7 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
   const player = usePlayer({ ref: playerRef, zone });
   const { state } = player;
   return (
-    <>
+    <Screen>
       <Stack.Screen options={{ title: state.kind === 'ready' ? state.data.player.name : 'Player' }} />
       <ScrollView
         style={styles.screen}
@@ -169,7 +170,7 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
           <QueryFallback state={state} subject="This player" onRetry={player.retry} />
         )}
       </ScrollView>
-    </>
+    </Screen>
   );
 }
 

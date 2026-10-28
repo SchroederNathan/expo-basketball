@@ -11,6 +11,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import { Screen } from '@/components/screen';
 import { HeaderIconButton } from '@/components/header-icon-button';
 import { leagueHeaderOptions } from '@/components/league-picker';
 import { dayWindow, shortDateLabel, windowIndex, type Ymd } from '@/domain/dates';
@@ -37,7 +38,9 @@ export function ScoresScreen() {
   const { zone, today } = useCalendar();
   const selected = params.date ?? today;
   const reducedMotion = useReducedMotion();
-  const { width } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
+  const [pageWidth, setPageWidth] = useState<number | null>(null);
+  const width = pageWidth ?? windowWidth;
   const [calendarOpen, setCalendarOpen] = useState(false);
 
   const [anchor, setAnchor] = useState(selected);
@@ -103,7 +106,7 @@ export function ScoresScreen() {
   };
 
   return (
-    <View style={styles.screen}>
+    <Screen>
       <Stack.Screen
         options={{
           title: shortDateLabel(selected),
@@ -145,6 +148,7 @@ export function ScoresScreen() {
         key={`${league}:${anchor}:${width}`}
         ref={listRef}
         style={styles.pager}
+        onLayout={(event) => setPageWidth(event.nativeEvent.layout.width)}
         data={dates}
         keyExtractor={(date) => date}
         horizontal
@@ -170,15 +174,11 @@ export function ScoresScreen() {
         onSelect={selectDate}
         onDismiss={() => setCalendarOpen(false)}
       />
-    </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
   pager: {
     flex: 1,
   },

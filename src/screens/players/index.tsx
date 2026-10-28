@@ -5,6 +5,7 @@ import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { useLeaders } from '@/api/queries';
 import type { LeaderRow as LeaderRowData } from '@/api/schemas';
 import { DisplayText } from '@/components/display-text';
+import { Screen } from '@/components/screen';
 import { Headshot } from '@/components/headshot';
 import { leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
@@ -58,7 +59,7 @@ export function PlayersScreen() {
   const { state } = leaders;
   const statLabel = LEADER_STAT_LABELS[stat];
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Players',
@@ -104,7 +105,7 @@ export function PlayersScreen() {
           <RefreshControl refreshing={leaders.refreshing} onRefresh={leaders.refresh} tintColor={colors.textTertiary} />
         }
       />
-    </>
+    </Screen>
   );
 }
 

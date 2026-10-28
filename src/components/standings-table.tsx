@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import type { StandingRow } from '@/api/schemas';
 import type { League } from '@/domain/league';
@@ -30,8 +31,16 @@ const STREAK: Column = { label: 'STRK', accessibilityName: 'streak', width: 44, 
 // Numeric cells stop growing at this text scale. Team names keep growing and wrap.
 const MAX_CELL_SCALE = 1.6;
 
-function columnsFor(fontScale: number): readonly Column[] {
-  return fontScale > 1.2 ? [RECORD, GB, STREAK] : [RECORD, PCT, GB, LAST_TEN, STREAK];
+function columnsFor(fontScale: number, width: number): readonly Column[] {
+  const choices = fontScale > 1.2
+    ? [[RECORD, GB, STREAK], [RECORD, GB]]
+    : [[RECORD, PCT, GB, LAST_TEN, STREAK], [RECORD, PCT, GB, STREAK], [RECORD, PCT, GB], [RECORD, GB]];
+  const scale = Math.min(fontScale, MAX_CELL_SCALE);
+  return choices.find((columns) => {
+    const cells = columns.reduce((total, column) => total + column.width * scale, 0);
+    const team = 20 + 22 + 96;
+    return cells + team + layout.screenPadding * 2 + space.sm * (columns.length + 2) <= width;
+  }) ?? [RECORD, GB];
 }
 
 function rowLabel(row: StandingRow, columns: readonly Column[]): string {
@@ -45,10 +54,11 @@ function rowLabel(row: StandingRow, columns: readonly Column[]): string {
 
 export function StandingsTable({ league, sections }: { league: League; sections: readonly StandingsSection[] }) {
   const { fontScale } = useWindowDimensions();
-  const columns = columnsFor(fontScale);
+  const [width, setWidth] = useState(0);
+  const columns = columnsFor(fontScale, width);
   const cellScale = Math.min(fontScale, MAX_CELL_SCALE);
   return (
-    <View>
+    <View onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
       {sections.map((section) => (
         <View key={section.key}>
           <SectionLabel>{section.title}</SectionLabel>

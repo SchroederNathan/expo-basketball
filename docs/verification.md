@@ -1,5 +1,7 @@
 # Verification record
 
+The October 28 [iPhone Duo safe-area follow-up](verification/duo-safe-areas.md) covers the current layout fixes and local and EAS simulator checks. The earlier checks below remain the record for the initial implementation.
+
 Checked on October 26, 2026 with an iOS 26.5 simulator and a local development build. Native projects are generated from app config. No hosted build, store submission, or deployment was performed.
 
 ## Bun migration checks

@@ -4,6 +4,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Notice } from '@/components/notice';
+import { Screen } from '@/components/screen';
 import { SectionLabel } from '@/components/section-label';
 import { LEAGUE_IDS, LEAGUES, type League } from '@/domain/league';
 import { useNotificationCenter } from '@/notifications/center';
@@ -359,7 +360,7 @@ export function NotificationsScreen() {
   }
 
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Notifications',
@@ -383,7 +384,7 @@ export function NotificationsScreen() {
       >
         {body}
       </ScrollView>
-    </>
+    </Screen>
   );
 }
 

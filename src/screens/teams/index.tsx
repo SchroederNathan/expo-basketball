@@ -3,6 +3,7 @@ import { RefreshControl, SectionList, StyleSheet, Text, View } from 'react-nativ
 import { useTeams } from '@/api/queries';
 import type { TeamSummary, TeamsIndex } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
+import { Screen } from '@/components/screen';
 import { leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
@@ -46,7 +47,7 @@ export function TeamsScreen() {
   const { state } = teams;
   const sections = state.kind === 'ready' && state.data.teams.length > 0 ? teamSections(state.data) : [];
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Teams',
@@ -84,7 +85,7 @@ export function TeamsScreen() {
           <RefreshControl refreshing={teams.refreshing} onRefresh={teams.refresh} tintColor={colors.textTertiary} />
         }
       />
-    </>
+    </Screen>
   );
 }
 

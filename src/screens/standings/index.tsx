@@ -6,6 +6,7 @@ import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native
 import { useStandings } from '@/api/queries';
 import type { Standings } from '@/api/schemas';
 import { leagueHeaderOptions } from '@/components/league-picker';
+import { Screen } from '@/components/screen';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
@@ -85,7 +86,7 @@ export function StandingsScreen() {
   const view = resolveView(views, choice?.league === league ? choice.key : null);
 
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Standings',
@@ -118,7 +119,7 @@ export function StandingsScreen() {
           </>
         )}
       </ScrollView>
-    </>
+    </Screen>
   );
 }
 
