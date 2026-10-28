@@ -6,6 +6,7 @@ import { FlatList, Platform, RefreshControl, Share, StyleSheet, View } from 'rea
 import { usePlays, useGame, useSeedGame } from '@/api/queries';
 import type { Game, Play } from '@/api/schemas';
 import { HeaderIconButton } from '@/components/header-icon-button';
+import { Screen } from '@/components/screen';
 import { InfoRows } from '@/components/info-rows';
 import { InvalidLink } from '@/components/invalid-link';
 import { Notice } from '@/components/notice';
@@ -93,7 +94,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
   const ios = Platform.OS === 'ios';
 
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Game',
@@ -220,7 +221,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
           />
         }
       />
-    </>
+    </Screen>
   );
 }
 

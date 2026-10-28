@@ -4,7 +4,11 @@ import { colors } from '@/theme';
 export default function TabsLayout() {
   return (
     <NativeTabs tintColor={colors.accent}>
-      <NativeTabs.Trigger name="(scores)" disableTransparentOnScrollEdge>
+      <NativeTabs.Trigger
+        name="(scores)"
+        disableTransparentOnScrollEdge
+        disableAutomaticContentInsets={process.env.EXPO_OS === 'ios'}
+      >
         <NativeTabs.Trigger.Icon sf={{ default: 'basketball', selected: 'basketball.fill' }} md="sports_basketball" />
         <NativeTabs.Trigger.Label>Scores</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>

@@ -60,6 +60,7 @@ function Center({ game }: { game: Game }) {
         size="hero"
         numberOfLines={1}
         adjustsFontSizeToFit
+        style={styles.score}
         tone={someoneLeads && !game.away.leading ? 'muted' : 'primary'}
       >
         {game.away.score}
@@ -69,6 +70,7 @@ function Center({ game }: { game: Game }) {
         size="hero"
         numberOfLines={1}
         adjustsFontSizeToFit
+        style={styles.score}
         tone={someoneLeads && !game.home.leading ? 'muted' : 'primary'}
       >
         {game.home.score}
@@ -146,6 +148,9 @@ const styles = StyleSheet.create({
   scores: {
     flexDirection: 'row',
     gap: space.sm,
+  },
+  score: {
+    flexShrink: 1,
   },
   title: {
     flexDirection: 'row',

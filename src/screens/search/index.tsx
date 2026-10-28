@@ -4,6 +4,7 @@ import { FlatList, Platform, StyleSheet, Text, TextInput, View } from 'react-nat
 import { useSearch } from '@/api/queries';
 import type { SearchHit } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
+import { Screen } from '@/components/screen';
 import { Headshot } from '@/components/headshot';
 import { leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
@@ -81,7 +82,7 @@ export function SearchScreen() {
   const results = typed !== null && query === typed && state.kind === 'ready' ? state.data.results : [];
 
   return (
-    <>
+    <Screen>
       <Stack.Screen
         options={{
           title: 'Search',
@@ -124,7 +125,7 @@ export function SearchScreen() {
         }
         ListEmptyComponent={empty}
       />
-    </>
+    </Screen>
   );
 }
 

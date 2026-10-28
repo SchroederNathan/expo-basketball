@@ -4,6 +4,7 @@ import { Platform, RefreshControl, SectionList, StyleSheet, Text, View } from 'r
 import { useTeam } from '@/api/queries';
 import type { RosterPlayer, ScheduleGame, TeamPage } from '@/api/schemas';
 import { DisplayText } from '@/components/display-text';
+import { Screen } from '@/components/screen';
 import { Headshot } from '@/components/headshot';
 import { InvalidLink } from '@/components/invalid-link';
 import { QueryFallback } from '@/components/query-fallback';
@@ -140,7 +141,7 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
   const page = state.kind === 'ready' ? state.data : null;
   const ios = Platform.OS === 'ios';
   return (
-    <>
+    <Screen>
       <Stack.Screen options={{ title: page?.team.name ?? 'Team', headerTransparent: true }} />
       <SectionList
         style={styles.list}
@@ -184,7 +185,7 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
           />
         }
       />
-    </>
+    </Screen>
   );
 }
 
