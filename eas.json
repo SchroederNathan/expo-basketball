@@ -21,6 +21,19 @@
       "autoIncrement": true,
       "channel": "production",
       "environment": "production"
+    },
+    "agent-preview": {
+      "extends": "preview",
+      "developmentClient": false,
+      "channel": "agent-preview",
+      "environment": "preview",
+      "env": {
+        "EXPO_PUBLIC_AGENT_DEMO": "prizepicks-v1"
+      },
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Release"
+      }
     }
   }
 }

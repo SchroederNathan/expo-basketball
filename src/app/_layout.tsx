@@ -11,6 +11,7 @@ import { PushResponseBridge } from '@/notifications/bridge';
 import { hydratePreferredLeague, usePreferencesHydrated } from '@/state/preferences';
 import { connectQueryLifecycle, createQueryClient } from '@/state/query-client';
 import { colors, fonts } from '@/theme';
+import { DemoIdentity } from '@/demo/identity';
 
 void SplashScreen.preventAutoHideAsync();
 
@@ -59,6 +60,7 @@ export default function RootLayout() {
             <Stack.Screen name="notifications" options={{ presentation: 'modal', headerShown: true }} />
             <Stack.Screen name="+not-found" options={{ headerShown: true, title: 'Not Found' }} />
           </Stack>
+          <DemoIdentity />
           <PushResponseBridge />
         </DisplayFontProvider>
       </ThemeProvider>

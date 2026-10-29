@@ -59,7 +59,10 @@
     "eas": "bunx eas-cli@25.3.0",
     "update:development": "bun run eas update --channel development --environment development --platform all",
     "update:preview": "bun run eas update --channel preview --environment preview --platform all",
-    "update:production": "bun run eas update --channel production --environment production --platform all"
+    "update:production": "bun run eas update --channel production --environment production --platform all",
+    "check:agents": "tsc --noEmit -p .eas/agents/tsconfig.json && bun test ./.eas/agents/runner.test.ts && bun .eas/agents/check-workflow.mjs",
+    "check:fixtures": "bun test ./src/api/demo.test.ts && EXPO_PUBLIC_AGENT_DEMO=prizepicks-v1 bun scripts/check-demo.ts",
+    "check:agentic": "bun run check:agents && bun run check:fixtures"
   },
   "private": true,
   "packageManager": "bun@1.2.22",

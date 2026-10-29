@@ -1,0 +1,316 @@
+{
+  "id": "prizepicks-v1",
+  "date": "20261026",
+  "zone": "America/Toronto",
+  "league": "nba",
+  "scoreboard": {
+    "league": "nba",
+    "date": "20261026",
+    "dateLabel": "Monday, October 26",
+    "hasLive": false,
+    "pollSeconds": 0,
+    "games": [
+      {
+        "id": "demo-game-1",
+        "league": "nba",
+        "state": "post",
+        "startTime": "2026-10-26T23:00:00Z",
+        "status": "Final",
+        "detail": "Final",
+        "period": 4,
+        "periodLabel": "Q4",
+        "clock": "",
+        "regulationPeriods": 4,
+        "broadcast": "Demo",
+        "odds": "",
+        "venue": "Demo Arena",
+        "shortName": "ORB @ COM",
+        "away": {
+          "id": "demo-orbits",
+          "abbr": "ORB",
+          "name": "Orbits",
+          "fullName": "Orbits",
+          "location": "Demo",
+          "logo": "",
+          "color": "#5B62FF",
+          "accent": "#5B62FF",
+          "record": "1-0",
+          "score": "100",
+          "linescores": [
+            "25",
+            "25",
+            "25",
+            "25"
+          ],
+          "winner": false,
+          "leading": false,
+          "rank": ""
+        },
+        "home": {
+          "id": "demo-comets",
+          "abbr": "COM",
+          "name": "Comets",
+          "fullName": "Comets",
+          "location": "Demo",
+          "logo": "",
+          "color": "#5B62FF",
+          "accent": "#5B62FF",
+          "record": "1-0",
+          "score": "108",
+          "linescores": [
+            "25",
+            "25",
+            "25",
+            "25"
+          ],
+          "winner": true,
+          "leading": true,
+          "rank": ""
+        }
+      }
+    ]
+  },
+  "players": [
+    {
+      "player": {
+        "id": "demo-avery",
+        "name": "Avery Stone",
+        "jersey": "12",
+        "position": "Guard",
+        "headshot": "",
+        "team": {
+          "id": "demo-comets",
+          "abbr": "COM",
+          "name": "Comets",
+          "logo": ""
+        },
+        "bio": [
+          {
+            "label": "Origin",
+            "value": "Synthetic demo player"
+          }
+        ],
+        "season": "2026-27",
+        "stats": [
+          {
+            "label": "PTS",
+            "value": "24.0",
+            "rank": "1st"
+          },
+          {
+            "label": "REB",
+            "value": "6.0",
+            "rank": "2nd"
+          },
+          {
+            "label": "AST",
+            "value": "8.0",
+            "rank": "1st"
+          }
+        ]
+      },
+      "games": [
+        {
+          "id": "demo-game-1",
+          "date": "20261026",
+          "dateLabel": "Oct 26",
+          "opponent": "ORB",
+          "opponentLogo": "",
+          "result": "W 108-100",
+          "win": true,
+          "min": "32",
+          "pts": "24",
+          "reb": "6",
+          "ast": "8",
+          "fg": "9-16"
+        }
+      ]
+    },
+    {
+      "player": {
+        "id": "demo-jordan",
+        "name": "Jordan Vale",
+        "jersey": "24",
+        "position": "Guard",
+        "headshot": "",
+        "team": {
+          "id": "demo-comets",
+          "abbr": "COM",
+          "name": "Comets",
+          "logo": ""
+        },
+        "bio": [
+          {
+            "label": "Origin",
+            "value": "Synthetic demo player"
+          }
+        ],
+        "season": "2026-27",
+        "stats": [
+          {
+            "name": "pointsPerGame",
+            "value": "18.5",
+            "rank": "3rd"
+          },
+          {
+            "label": "REB",
+            "value": "7.0",
+            "rank": "1st"
+          },
+          {
+            "name": "demoUnknownMetric",
+            "value": "4.2",
+            "rank": ""
+          }
+        ]
+      },
+      "games": [
+        {
+          "id": "demo-game-1",
+          "date": "20261026",
+          "dateLabel": "Oct 26",
+          "opponent": "ORB",
+          "opponentLogo": "",
+          "result": "W 108-100",
+          "win": true,
+          "min": "32",
+          "pts": "24",
+          "reb": "6",
+          "ast": "8",
+          "fg": "9-16"
+        }
+      ]
+    }
+  ],
+  "game": {
+    "game": {
+      "id": "demo-game-1",
+      "league": "nba",
+      "state": "post",
+      "startTime": "2026-10-26T23:00:00Z",
+      "status": "Final",
+      "detail": "Final",
+      "period": 4,
+      "periodLabel": "Q4",
+      "clock": "",
+      "regulationPeriods": 4,
+      "broadcast": "Demo",
+      "odds": "",
+      "venue": "Demo Arena",
+      "shortName": "ORB @ COM",
+      "away": {
+        "id": "demo-orbits",
+        "abbr": "ORB",
+        "name": "Orbits",
+        "fullName": "Orbits",
+        "location": "Demo",
+        "logo": "",
+        "color": "#5B62FF",
+        "accent": "#5B62FF",
+        "record": "1-0",
+        "score": "100",
+        "linescores": [
+          "25",
+          "25",
+          "25",
+          "25"
+        ],
+        "winner": false,
+        "leading": false,
+        "rank": ""
+      },
+      "home": {
+        "id": "demo-comets",
+        "abbr": "COM",
+        "name": "Comets",
+        "fullName": "Comets",
+        "location": "Demo",
+        "logo": "",
+        "color": "#5B62FF",
+        "accent": "#5B62FF",
+        "record": "1-0",
+        "score": "108",
+        "linescores": [
+          "25",
+          "25",
+          "25",
+          "25"
+        ],
+        "winner": true,
+        "leading": true,
+        "rank": ""
+      }
+    },
+    "linescore": {
+      "labels": [
+        "Q1",
+        "Q2",
+        "Q3",
+        "Q4"
+      ],
+      "away": [
+        "25",
+        "25",
+        "25",
+        "25"
+      ],
+      "home": [
+        "27",
+        "27",
+        "27",
+        "27"
+      ]
+    },
+    "flow": {
+      "width": 354,
+      "height": 64,
+      "grid": "",
+      "line": "",
+      "awayArea": "",
+      "homeArea": "",
+      "awayColor": "#5B62FF",
+      "homeColor": "#5B62FF",
+      "dotX": 0,
+      "dotY": 0,
+      "showDot": false,
+      "empty": true
+    },
+    "leaders": [
+      {
+        "id": "demo-avery",
+        "teamId": "demo-comets",
+        "name": "Avery Stone",
+        "headshot": "",
+        "line": "24 PTS \u00b7 8 AST",
+        "accent": "#5B62FF"
+      },
+      {
+        "id": "demo-jordan",
+        "teamId": "demo-comets",
+        "name": "Jordan Vale",
+        "headshot": "",
+        "line": "18 PTS \u00b7 7 REB",
+        "accent": "#5B62FF"
+      }
+    ],
+    "box": [],
+    "periods": [
+      {
+        "id": "all",
+        "label": "All"
+      }
+    ],
+    "lastPlay": null,
+    "standings": {
+      "season": "2026-27",
+      "groups": []
+    },
+    "info": [
+      {
+        "label": "Fixture",
+        "value": "Synthetic demo"
+      }
+    ],
+    "pollSeconds": 0
+  }
+}

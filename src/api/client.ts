@@ -1,6 +1,8 @@
 import type { z } from 'zod';
 import { API_BASE_URL } from './config';
 import { ApiError } from './errors';
+import { DEMO_ENABLED } from '@/demo/config';
+import { demoResponse } from './demo';
 
 export type RequestOptions = {
   readonly signal?: AbortSignal;
@@ -28,6 +30,12 @@ export async function apiGet<S extends z.ZodType>({
   signal,
   fresh = false,
 }: GetRequest<S>): Promise<z.output<S>> {
+  if (DEMO_ENABLED) {
+    signal?.throwIfAborted();
+    const parsed = schema.safeParse(demoResponse({ path, params }));
+    if (!parsed.success) throw new ApiError('contract', 'The demo fixture has an unexpected shape.');
+    return parsed.data;
+  }
   const url = `${API_BASE_URL}${path}?${queryString(params)}`;
   let response: Response;
   try {

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
 import { isIanaZone, todayIn, type IanaZone, type Ymd } from '@/domain/dates';
+import { DEMO_CALENDAR, DEMO_ENABLED } from '@/demo/config';
 
 export type Calendar = { readonly zone: IanaZone; readonly today: Ymd };
 
@@ -14,6 +15,7 @@ function deviceZone(): IanaZone {
 }
 
 function read(): Calendar {
+  if (DEMO_ENABLED) return DEMO_CALENDAR;
   const zone = deviceZone();
   return { zone, today: todayIn(zone, new Date()) };
 }

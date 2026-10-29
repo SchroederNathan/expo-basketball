@@ -48,3 +48,4 @@ example
 !.env.example
 .audit/
 verification-local/
+agent-output/
