@@ -35,6 +35,11 @@ assert.deepEqual(app.runtimeVersion, { policy: 'appVersion' });
 assert.ok(jobs.check.after.includes('build') && jobs.check.after.includes('repack'));
 assert.equal(jobs.check.steps.at(-1).with.path, 'agent-output/public/**/*');
 assert.equal(jobs.result.if, "${{ after.check.outputs.state != 'PASS' }}");
+assert.equal(jobs.comment.type, 'github-comment');
+assert.deepEqual(jobs.comment.after, ['check']);
+assert.equal(jobs.comment.if, '${{ github.event.pull_request.number }}');
+assert.ok(jobs.comment.params.payload.includes("after.check.outputs.state || 'INCONCLUSIVE'"));
+assert.ok(jobs.comment.params.payload.includes('${{ workflow.url }}'));
 for (const job of Object.values(jobs)) {
   for (const dependency of [...(job.needs ?? []), ...(job.after ?? [])]) assert.ok(jobs[dependency]);
 }

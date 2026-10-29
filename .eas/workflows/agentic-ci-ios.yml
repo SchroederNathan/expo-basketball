@@ -154,6 +154,22 @@ jobs:
           name: agentic-ci-ios-evidence
           path: agent-output/public/**/*
 
+  comment:
+    name: Report iOS evidence on the PR
+    type: github-comment
+    after: [check]
+    if: ${{ github.event.pull_request.number }}
+    params:
+      payload: |
+        ## Agentic CI iOS
+
+        Verdict **${{ after.check.outputs.state || 'INCONCLUSIVE' }}**.
+
+        [Open the workflow and evidence artifacts](${{ workflow.url }}).
+
+        Candidate `${{ github.event.pull_request.head.sha }}`.
+        Attempt `${{ after.check.outputs.attempt_id || 'unavailable' }}`.
+
   result:
     name: Require a verified PASS
     after: [preflight, fingerprint, get_build, build, repack, check]

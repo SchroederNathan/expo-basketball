@@ -177,6 +177,8 @@ The PR body carries a versioned immutable acceptance receipt with the original t
 For a same-repository PR targeting `release/**`, Agentic CI reads the controller receipt and uses the original issue criteria automatically. It checks baseline ancestry, protected-file identity, the frozen issue-content digest, and the original criteria digest. The repaired candidate is built or repacked at its own SHA.
 Issue branches without a valid receipt fail closed. Ordinary PRs and the first baseline manual check continue using the existing three-check `check-ios.md` prompt. A baseline PASS never claims Jordan's seeded labels were repaired.
 
+PR-triggered checks post their verdict, candidate SHA, attempt ID, and workflow evidence link through EAS's GitHub Comment job. Manual checks retain the same artifacts on the workflow page. The linked Expo project must have its GitHub repository connection enabled for PR triggers and comments.
+
 For a manual acceptance run or an explicit target outside the PR trigger's branch filter, take the candidate SHA, branch, issue digest, and criteria digest from the controller artifacts.
 
 ```sh

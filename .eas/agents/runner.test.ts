@@ -9,6 +9,8 @@ import { subscriptionConfig, validateSubscription } from './auth';
 import { publishTriage } from './github';
 import { demoIssueMarker, acceptanceMarker, acceptanceSchema, issueDigest } from './issue';
 import { executeCheck, type CheckOptions } from './run';
+import { getConfig } from '@expo/config';
+import { writeSimulatorProject } from './simulator';
 import { admitFile, digest, resultSchema, targetSchema, verdictSchema } from './result';
 
 let mediaDirectory = '';
@@ -16,6 +18,7 @@ before(async () => {
   mediaDirectory = await mkdtemp(join(tmpdir(), 'lob-test-media-'));
   execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=blue:s=200x300:d=1.2', '-c:v', 'mpeg4', join(mediaDirectory, 'clip.mp4')]);
   execFileSync('ffmpeg', ['-v', 'error', '-i', join(mediaDirectory, 'clip.mp4'), '-frames:v', '1', join(mediaDirectory, 'screen.png')]);
+  execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=s=200x300:d=2', '-c:v', 'mpeg4', '-movflags', '+faststart', join(mediaDirectory, 'faststart.mp4')]);
 });
 after(async () => { await rm(mediaDirectory, { recursive: true, force: true }); });
 
@@ -27,6 +30,22 @@ const fakeAuth = {
   tokens: { access_token: 'synthetic-access-token', id_token: 'synthetic-id-token', refresh_token: 'synthetic-refresh-token' },
   last_refresh: '2026-10-26T00:00:00.000Z',
 };
+
+test('isolated simulator config resolves without app plugins or installed dependencies', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'lob-simulator-config-'));
+  try {
+    await copyFile(resolve('app.json'), join(directory, 'app.json'));
+    await writeFile(join(directory, 'package.json'), '{"name":"lob-device","private":true}');
+    assert.throws(() => getConfig(directory, { skipSDKVersionRequirement: true }), /resolve plugin/);
+    await writeSimulatorProject(process.cwd(), directory);
+    const { exp } = getConfig(directory, { skipSDKVersionRequirement: true });
+    const original = JSON.parse(await readFile('app.json', 'utf8')).expo;
+    assert.equal(exp.extra?.eas.projectId, original.extra.eas.projectId);
+    assert.equal(exp.owner, original.owner);
+    assert.equal(exp.slug, original.slug);
+    assert.deepEqual(exp.plugins ?? [], []);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
 
 async function scenario(kind: string, inspect: (context: { options: CheckOptions; log: string; root: string; seed: string }) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'lob-runner-test-'));
@@ -76,7 +95,11 @@ if (tool === 'eas') {
     if (label !== 'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime=1.0.0 bundle=embedded') process.exit(4);
   }
   if (args[0] === 'record' && args[1] === 'start') writeFileSync(join(c.root,'recording-path'),args[2]);
-  else if (args[0] === 'record' && args[1] === 'stop' && c.kind !== 'missing-recording') copyFileSync(join(c.mediaDirectory,'clip.mp4'),readFileSync(join(c.root,'recording-path'),'utf8'));
+  else if (args[0] === 'record' && args[1] === 'stop' && c.kind !== 'missing-recording') {
+    const destination=readFileSync(join(c.root,'recording-path'),'utf8');
+    if(c.kind==='corrupt-recording') {const bytes=readFileSync(join(c.mediaDirectory,'faststart.mp4'));writeFileSync(destination,bytes.subarray(0,Math.floor(bytes.length*0.6)));}
+    else copyFileSync(join(c.mediaDirectory,'clip.mp4'),destination);
+  }
   else if (args[0] === 'screenshot') copyFileSync(join(c.mediaDirectory,'screen.png'),args[1]);
   if(args[0] === 'snapshot') out({label:'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime=1.0.0 bundle='+(c.kind==='wrong-bundle'?'ota':'embedded'),text:'Orbits 100 Comets 108 Final'});
   else out({ok:true});
@@ -179,7 +202,7 @@ test('complete local fake-executable run requires decodable evidence and persist
   });
 });
 
-for (const kind of ['malformed-verdict', 'missing-screenshot', 'missing-recording', 'timeout', 'exit-nonzero', 'auth-write-back-failed', 'cleanup-unconfirmed', 'wrong-bundle', 'partial-start']) {
+for (const kind of ['malformed-verdict', 'missing-screenshot', 'missing-recording', 'corrupt-recording', 'timeout', 'exit-nonzero', 'auth-write-back-failed', 'cleanup-unconfirmed', 'wrong-bundle', 'partial-start']) {
   test(`${kind} remains INCONCLUSIVE and stops only the owned simulator`, async () => {
     await scenario(kind, async ({ options, log }) => {
       const result = await executeCheck(options);

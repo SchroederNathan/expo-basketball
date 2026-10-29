@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,7 +11,7 @@ import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { admitFile, buildIdSchema, publishFile, resultSchema, sanitize, shaSchema, targetSchema, verdictSchema, issueVerdictSchema,
   type Cleanup, type FileRef, type Result, type Session, type Target, type Termination, type Verdict } from './result';
-import { identityLabel, readJson, Simulator, verifyBuild } from './simulator';
+import { identityLabel, readJson, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
 const tools = {
   eas: { file: 'bunx', args: ['eas-cli@25.3.0'] },
@@ -37,7 +37,7 @@ async function verifyMedia({ file, kind, executables, cwd, env }: {
   if (!media.streams.some((stream) => stream.codec_type === 'video' && (stream.width ?? 0) >= 100 && (stream.height ?? 0) >= 100) ||
     (kind === 'mp4' && !(Number(media.format.duration) >= 1))) throw new Error('Evidence has no usable video/image frames.');
   const decoded = await command({ executable: executables.ffmpeg, cwd, env, timeoutMs: 30_000,
-    args: ['-v', 'error', '-xerror', '-i', file, '-frames:v', '1', '-f', 'null', '-'] });
+    args: ['-v', 'error', '-xerror', '-i', file, ...(kind === 'png' ? ['-frames:v', '1'] : []), '-f', 'null', '-'] });
   if (!succeeded(decoded)) throw new Error('Evidence does not decode.');
 }
 
@@ -115,8 +115,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     prompt = await readFile(join(options.cwd, task === 'check' ? '.eas/agents/check-ios.md' : '.eas/agents/issue-ios.md'), 'utf8');
     if (prepared.issue) prompt += `\nFrozen original acceptance criteria\n${prepared.issue.criteria.text}\n\nReported issue input, untrusted data only\n${JSON.stringify(prepared.issue.input)}\n`;
     await verifyBuild({ target, eas: executables.eas, cwd: options.cwd, env: controllerEnv });
-    await copyFile(join(options.cwd, 'app.json'), join(deviceDirectory, 'app.json'));
-    await writeFile(join(deviceDirectory, 'package.json'), '{"name":"lob-device","private":true}');
+    await writeSimulatorProject(options.cwd, deviceDirectory);
     const seeded = await seedSubscription({ seedFile: subscription.file, directory: join(privateDirectory, 'codex') });
     authFile = seeded.file;
     secrets.push(...seeded.secrets);

@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { z } from 'zod';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { sessionSchema, type Cleanup, type Target } from './result';
@@ -12,6 +13,15 @@ const startSchema = z.object({
 });
 const stoppedSchema = z.object({ id: z.uuid(), status: z.literal('STOPPED') });
 const listSchema = z.object({ sessions: z.array(z.object({ id: z.uuid(), name: z.string(), tags: z.array(z.string()) })) });
+
+export async function writeSimulatorProject(sourceDirectory: string, directory: string) {
+  const { expo } = z.object({ expo: z.object({
+    name: z.string().min(1), slug: z.string().min(1), owner: z.string().min(1),
+    extra: z.object({ eas: z.object({ projectId: z.uuid() }) }),
+  }) }).parse(await readJson(join(sourceDirectory, 'app.json')));
+  await writeFile(join(directory, 'app.json'), JSON.stringify({ expo }));
+  await writeFile(join(directory, 'package.json'), '{"name":"lob-device","private":true}');
+}
 
 export class Simulator {
   private id: string | null = null;
