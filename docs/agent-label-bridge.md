@@ -2,7 +2,7 @@
 
 Use this bridge to start the existing PrizePicks demo workflows from trusted issues in public `SchroederNathan/expo-basketball`. The `agent` label starts Issue to PR. The `agent-triage` label starts Bug triage.
 
-The controller dispatches EAS and exits without waiting for the cloud result. A successful Actions job establishes dispatch acceptance only. Real GitHub event delivery, Actions token access, Expo credentials, and cloud outcomes remain unverified by this implementation.
+The controller dispatches EAS and exits without waiting for the cloud result. A successful Actions job establishes dispatch acceptance only. Real issue-label events dispatched triage and coding successfully in the recorded rehearsal. The [presentation guide](prizepicks-demo.md#historical-evidence-for-the-complete-story) links both Actions runs and their separate cloud outcomes.
 
 ## Install the reviewed controller on main
 
@@ -15,7 +15,7 @@ The controller dispatches EAS and exits without waiting for the cloud result. A 
 
 Keep the Expo dispatch token in Actions as `EXPO_AGENT_TOKEN`. The controller supplies it only to the EAS subprocess as `EXPO_TOKEN`. It passes neither `GITHUB_TOKEN` nor other Actions secrets to that subprocess. The bridge's `GITHUB_TOKEN` performs only GitHub API reads. The EAS publication credential stays in EAS preview.
 
-The workflow requests only `contents: read` and `issues: read`. GitHub documents Metadata read for [`GET /repos/{owner}/{repo}/collaborators/{username}/permission`](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user). The endpoint supports installation access tokens, and its legacy `permission` maps maintain to write. The implicit Metadata read permission is expected to suffice for `GITHUB_TOKEN`. Confirm this in the first real Actions rehearsal. A denied permission request fails closed without a fallback credential or elevated workflow permission.
+The workflow requests only `contents: read` and `issues: read`. GitHub documents Metadata read for [`GET /repos/{owner}/{repo}/collaborators/{username}/permission`](https://docs.github.com/en/rest/collaborators/collaborators#get-repository-permissions-for-a-user). The endpoint supports installation access tokens, and its legacy `permission` maps maintain to write. The real label-event rehearsals completed this permission check with the configured `GITHUB_TOKEN`. This verifies the demonstrated repository setup. A denied permission request fails closed without a fallback credential or elevated workflow permission.
 
 ## Start an issue workflow
 

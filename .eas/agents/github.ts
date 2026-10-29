@@ -1,10 +1,9 @@
-import { join } from 'node:path';
 import { z } from 'zod';
-import { acceptanceFor, acceptanceMarker, changeBranch, freezeIssue, type Acceptance } from './issue';
-import { publishFile, resultSchema, shaSchema, type Result } from './result';
+import { acceptanceMarker, type Acceptance } from './issue';
+import { shaSchema } from './result';
 
 const userSchema = z.object({ id: z.number().int().positive() });
-const commentSchema = z.object({ id: z.number().int().positive(), body: z.string(), html_url: z.url(), user: userSchema });
+export const commentSchema = z.object({ id: z.number().int().positive(), body: z.string(), body_html: z.string().optional(), html_url: z.url(), user: userSchema });
 const prSchema = z.object({ number: z.number().int().positive(), html_url: z.url(), body: z.string().nullable(),
   state: z.enum(['open', 'closed']), head: z.object({ ref: z.string(), sha: shaSchema, repo: z.object({ full_name: z.string() }) }),
   base: z.object({ ref: z.string(), sha: shaSchema, repo: z.object({ full_name: z.string() }) }) });
@@ -20,39 +19,43 @@ export class GitHub {
       throw new Error('GitHub writes require the exact trusted repository.');
     }
   }
-  private async request(path: string, method = 'GET', body?: unknown): Promise<unknown> {
+  private async request(path: string, method = 'GET', body?: unknown, signal?: AbortSignal): Promise<unknown> {
     const response = await fetch(`${this.options.apiBase ?? 'https://api.github.com'}${path}`, {
-      method, redirect: 'error', signal: AbortSignal.timeout(20_000),
-      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github+json',
+      method, redirect: 'error', signal: AbortSignal.any([AbortSignal.timeout(20_000), ...(signal ? [signal] : [])]),
+      headers: { Authorization: `Bearer ${this.token}`, Accept: 'application/vnd.github.full+json',
         'X-GitHub-Api-Version': '2022-11-28', ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
     });
     if (!response.ok) throw new Error(`GitHub controller request failed with status ${response.status}. Rerun to reconcile before writing.`);
     return response.json();
   }
-  get = (path: string) => this.request(`/repos/${this.options.repository}${path}`);
-  private async pages(path: string): Promise<unknown[]> {
+  get = (path: string, signal?: AbortSignal) => this.request(`/repos/${this.options.repository}${path}`, 'GET', undefined, signal);
+  private async pages(path: string, signal?: AbortSignal): Promise<unknown[]> {
     const items: unknown[] = [];
     for (let page = 1; page <= 10; page++) {
-      const batch = z.array(z.unknown()).parse(await this.get(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`));
+      const batch = z.array(z.unknown()).parse(await this.get(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, signal));
       items.push(...batch);
       if (batch.length < 100) return items;
     }
     throw new Error('GitHub reconciliation exceeded its bounded page limit. No write is safe.');
   }
-  async comment({ issue, marker, text }: { issue: number; marker: string; text: string }) {
-    const me = userSchema.parse(await this.request('/user'));
-    const comments = z.array(commentSchema).parse(await this.pages(`/issues/${issue}/comments`));
-    const found = comments.filter((comment) => comment.body.startsWith(`${marker}\n`));
-    if (found.length > 1 || found.some((comment) => comment.user.id !== me.id)) throw new PublicationConflict('Issue comment marker ownership conflict.');
-    const body = `${marker}\n${text}`;
+  async writer(signal?: AbortSignal) {
+    const me = userSchema.parse(await this.request('/user', 'GET', undefined, signal));
+    const repository = z.object({ full_name: z.string(), private: z.literal(false), permissions: z.object({ push: z.literal(true) }) }).parse(await this.get('', signal));
+    if (repository.full_name !== this.options.repository) throw new PublicationConflict('Writer repository mismatch.');
+    return me.id;
+  }
+  async comments(issue: number, signal?: AbortSignal) { return z.array(commentSchema).parse(await this.pages(`/issues/${issue}/comments`, signal)); }
+  async exactComment(id: number, signal?: AbortSignal) { return commentSchema.parse(await this.get(`/issues/comments/${id}`, signal)); }
+  async patchComment(id: number, body: string, actor: number, expectedBody: string, signal?: AbortSignal, beforeWrite?: () => Promise<void>) {
     if (body.length > 30_000) throw new Error('Controller comment exceeds its bounded size.');
-    const existing = found[0];
-    if (existing?.body === body) return { kind: 'reused', url: existing.html_url };
-    const written = commentSchema.parse(await this.request(`/repos/${this.options.repository}${existing ? `/issues/comments/${existing.id}` : `/issues/${issue}/comments`}`,
-      existing ? 'PATCH' : 'POST', { body }));
-    if (written.body !== body || written.user.id !== me.id) throw new Error('Comment write receipt mismatch.');
-    return { kind: existing ? 'updated' : 'created', url: written.html_url };
+    const before = await this.exactComment(id, signal);
+    if (before.user.id !== actor || before.body !== expectedBody) throw new PublicationConflict('Exact comment ownership or content conflict.');
+    await beforeWrite?.();
+    signal?.throwIfAborted();
+    const written = commentSchema.parse(await this.request(`/repos/${this.options.repository}/issues/comments/${id}`, 'PATCH', { body }, signal));
+    if (written.id !== id || written.user.id !== actor || written.body !== body) throw new PublicationConflict('Exact comment write receipt mismatch.');
+    return written;
   }
   async pullRequest({ acceptance, branch, candidate, create = true }: { acceptance: Acceptance; branch: string; candidate: string; create?: boolean }) {
     const repository = this.options.repository;
@@ -77,35 +80,4 @@ export class GitHub {
     if (!valid(pr)) throw new Error('PR write receipt mismatch.');
     return { kind: 'created', url: pr.html_url, number: pr.number };
   }
-}
-
-export async function publishTriage({ result: input, env, cwd, outputRoot, apiBase }: {
-  result: Result; env: NodeJS.ProcessEnv; cwd: string; outputRoot: string; apiBase?: string;
-}) {
-  const result = resultSchema.parse(input);
-  if (!result.target || result.target.kind !== 'triage' || !result.target.issue) throw new Error('No validated triage target to publish.');
-  const target = result.target;
-  const issueIdentity = result.target.issue;
-  const github = new GitHub({ repository: target.repository, env, apiBase });
-  const issue = await freezeIssue({ env: { ...env, AGENT_REPOSITORY: target.repository, AGENT_ISSUE_NUMBER: String(issueIdentity.number),
-    AGENT_ISSUE_DIGEST: issueIdentity.sha256, AGENT_CRITERIA_SHA256: target.criteria.sha256 }, cwd, get: github.get });
-  const acceptance = acceptanceFor({ issue, target: target.source, repository: target.repository });
-  const marker = `<!-- lob-agent:triage:${changeBranch(issue, target.source)} -->`;
-  const text = [`Triage ${result.state} for issue #${issue.identity.number}.`,
-    `Source ${target.source.ref} at ${target.source.sha}. Build ${target.native.installed}.`,
-    `Issue input SHA-256 ${acceptance.issue.sha256}. Original criteria SHA-256 ${acceptance.criteriaSha256}.`,
-    `Fixture SHA-256 ${target.fixture.sha256}. Cleanup ${result.cleanup.state}. Subscription ${result.auth}.`,
-    result.runUrl ? `[Workflow evidence and report](${result.runUrl}) in attempt ${result.attemptId}.` : 'No cloud artifact link was provided.',
-    result.session ? `[Owned simulator session](${result.session.url}).` : 'No simulator session was established.',
-    ...(result.state === 'INCONCLUSIVE' ? [`No definitive reproduction verdict. ${result.reason}`] : [
-      ...result.evidence.screenshots.map((file) => `Screenshot ${file.path}, SHA-256 ${file.sha256}.`),
-      `Recording ${result.evidence.recording.path}, SHA-256 ${result.evidence.recording.sha256}.`,
-      `Observed identity ${result.evidence.identity.path}, SHA-256 ${result.evidence.identity.sha256}.`,
-    ]),
-    'This result is bounded to the selected artifact and frozen criteria. The controller does not close or relabel the issue.',
-  ].join('\n\n');
-  if (!result.runUrl) throw new Error('A cloud evidence link is required before GitHub publication.');
-  const receipt = await github.comment({ issue: issue.identity.number, marker, text });
-  await publishFile({ directory: join(outputRoot, 'public', result.attemptId), name: 'publication.json', bytes: JSON.stringify(receipt, null, 2) });
-  return receipt;
 }

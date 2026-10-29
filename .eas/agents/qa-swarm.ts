@@ -7,6 +7,11 @@ import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { CodexServer, codexModel, concurrentReceipts, type TurnReceipt } from './codex-server';
 import { preflight } from './preflight';
+import { finalizedEvidence, publicationStatus } from './evidence';
+import { publishEvidenceComment } from './evidence-publisher';
+import { evidencePhase } from './evidence-phase';
+import { prepareEvidenceWriter } from './evidence-tools';
+import { qaResultSchema } from './qa-result';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { prepareQaTools, qaToolPins, QaToolPreparationError, type PreparedQaTools, type QaToolCommands } from './qa-tools';
 import { laneIds, lanePrompt, laneVerdictSchema, type LaneId, type LaneVerdict } from './qa-lanes';
@@ -259,11 +264,11 @@ export async function executeSwarm(options: SwarmOptions) {
   const definitive = !problem && target && auth === 'persisted' && serverStop?.state === 'stopped' && serverStop.healthy && !serverStop.forced && concurrent &&
     records.every((lane) => lane.state !== 'INCONCLUSIVE') && new Set(records.map((lane) => lane.session?.id)).size === 3;
   const state = definitive ? records.some((lane) => lane.state === 'FAIL') ? 'FAIL' : 'PASS' : 'INCONCLUSIVE';
-  const result = { version: 1, kind: 'qa', attemptId, state, startedAt, finishedAt: Date.now(),
-    runId: options.env.AGENT_RUN_ID ?? 'local', target, model: codexModel,
+  const result = qaResultSchema.parse({ version: 1, kind: 'qa', attemptId, state, startedAt, finishedAt: Date.now(),
+    runId: options.env.AGENT_RUN_ID ?? 'local', runUrl: options.env.AGENT_RUN_URL || null, target, model: codexModel,
     tools: qaToolPins, preparation, preparationDiagnostics,
     auth, server: { processId: server?.pid ?? null, stop: serverStop }, concurrent, lanes: records,
-    reason: problem ?? (definitive ? null : 'All lanes, concurrent turns, cleanup, and auth persistence must be verified.') };
+    reason: problem ?? (definitive ? null : 'All lanes, concurrent turns, cleanup, and auth persistence must be verified.') });
   await publishFile({ directory: publicDirectory, name: 'result.json', bytes: sanitize(JSON.stringify(result, null, 2), secrets) });
   await publishFile({ directory: publicDirectory, name: 'report.md', bytes: `# QA Swarm\n\n${state}\n\n${records.map((lane) => `- ${lane.id}. ${lane.state}. Cleanup ${lane.cleanup.state}.`).join('\n')}\n\nSource ${target?.source.sha ?? 'unverified'}.\nBuild ${target?.native.installed ?? 'unverified'}.\nConcurrent turns ${concurrent}.\nSubscription ${auth}.\n` });
   return result;
@@ -274,14 +279,19 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   process.once('SIGINT', () => cancellation.abort());
   process.once('SIGTERM', () => cancellation.abort());
   const main = async () => {
-    if (process.argv[2] === 'preflight') { await qaPreflight({ cwd: process.cwd(), env: process.env }); return; }
+    if (process.argv[2] === 'preflight') {
+      const prepared = await qaPreflight({ cwd: process.cwd(), env: process.env });
+      if (prepared.request.pullRequest) await prepareEvidenceWriter({ repository: prepared.request.repository, env: process.env, directory: resolve('agent-output/.evidence-tools'), phase: evidencePhase(cancellation.signal, 120_000) });
+      return;
+    }
     if (process.argv[2] !== 'run') throw new Error('Invalid QA command.');
+    const writer = process.env.AGENT_PR_NUMBER ? await prepareEvidenceWriter({ repository: z.string().parse(process.env.AGENT_REPOSITORY), env: process.env, directory: resolve('agent-output/.evidence-tools'), phase: evidencePhase(cancellation.signal, 120_000) }) : null;
     const result = await executeSwarm({ cwd: process.cwd(), env: process.env,
       outputRoot: resolve('agent-output/qa'), signal: cancellation.signal });
-    const status = { state: result.state, attemptId: result.attemptId };
+    const status = publicationStatus(result, await publishEvidenceComment({ observed: finalizedEvidence(result), root: resolve('agent-output/qa/public', result.attemptId), writer, cwd: process.cwd(), env: process.env, phase: evidencePhase(cancellation.signal) }));
     await writeFile('agent-output/qa/status.json', JSON.stringify(status));
     process.stdout.write(`${JSON.stringify(status)}\n`);
-    process.exitCode = result.state === 'PASS' ? 0 : result.state === 'FAIL' ? 1 : 2;
+    process.exitCode = status.state === 'PASS' ? 0 : status.state === 'FAIL' ? 1 : 2;
   };
   main().catch(() => { process.stderr.write('QA did not produce a verified result.\n'); process.exitCode = 2; });
 }

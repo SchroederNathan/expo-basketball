@@ -7,7 +7,6 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import { subscriptionConfig, validateSubscription } from './auth';
-import { publishTriage } from './github';
 import { demoIssueMarker, acceptanceMarker, acceptanceSchema, issueDigest } from './issue';
 import { executeCheck, type CheckOptions } from './run';
 import { getConfig } from '@expo/config';
@@ -532,17 +531,7 @@ for (const [kind, expected] of [
         assert.equal(result.cleanup.state, 'stopped');
       }
       if (expected !== 'INCONCLUSIVE') {
-        options.env.AGENT_GITHUB_WRITE_TOKEN = 'synthetic-write-token';
-        await assert.rejects(publishTriage({ result, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase }), /cloud evidence link/);
-        const linked = { ...result, runUrl: 'https://expo.dev/accounts/demo/projects/lob/workflows/run-1' };
-        const published = await publishTriage({ result: linked, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
-        assert.equal(published.kind, 'created');
-        await rm(join(options.outputRoot, 'public', result.attemptId, 'publication.json'));
-        const reused = await publishTriage({ result: linked, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
-        assert.equal(reused.kind, 'reused');
-        await rm(join(options.outputRoot, 'public', result.attemptId, 'publication.json'));
-        const updated = await publishTriage({ result: { ...linked, runUrl: 'https://expo.dev/accounts/demo/projects/lob/workflows/run-2' }, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
-        assert.equal(updated.kind, 'updated');
+        assert.equal(JSON.parse(await readFile(join(options.outputRoot, 'public', result.attemptId, 'result.json'), 'utf8')).state, result.state);
         assert.ok((await readFile(log, 'utf8')).includes('simulator:stop'));
       }
     });

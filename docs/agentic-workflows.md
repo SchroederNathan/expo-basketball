@@ -1,7 +1,12 @@
 # Run the Lob agent workflows
 
-Agentic CI, Bug triage, Issue to PR, and QA Swarm have executable workflows for the PrizePicks demonstration. The [issue label bridge](agent-label-bridge.md) starts triage or coding on the explicit release branch. The [presentation guide](prizepicks-demo.md) records the current cloud evidence.
-The manual baseline check, baseline bug reproduction, coding PR publication, duplicate-request reuse, repaired PR acceptance, and repaired-candidate triage have cloud receipts linked in the presentation guide. The three-session QA run remains under rehearsal. Local tests and EAS YAML validation do not establish those results.
+For a plain-language rundown, start with [How the agentic workflows work](agentic-workflows-overview.md). Browse all guides in the [documentation index](README.md).
+
+Agentic CI, Bug triage, Issue to PR, and QA Swarm have real cloud evidence for the PrizePicks demonstration. The [issue label bridge](agent-label-bridge.md) starts triage or coding on the explicit release branch. Use the [presentation guide](prizepicks-demo.md#current-evidence) for the evidence links and their exact revisions.
+
+At PR 4 head `705a42333c551953d62cf9c54156c2e17b2363bf`, [automatic issue acceptance CI](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18906-6503-7785-8de9-f9d00384177e) and [manual three-lane QA](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18906-9946-7962-b6db-962f825ffb27) passed. The October 29 audit recorded all 15 PR checks green, four independently confirmed STOPPED sessions, persisted auth, and healthy QA server shutdown. All 15 PNGs and 3,460 recording frames decoded. The QA search-back recording has a 1.667 ms backward timestamp jump at zero-based frame 259, so the stricter chronology audit failed. Cloud PASS does not establish clean recording timing.
+
+The original triage, coding publication, duplicate-request reuse, and repaired-candidate triage ran on earlier revisions. They remain historical proof of those paths. Local tests and EAS YAML validation do not substitute for cloud results.
 
 The repository remains public at `SchroederNathan/expo-basketball`, as explicitly approved by the operator for subscription authentication. OpenAI's [advanced CI auth guide](https://learn.chatgpt.com/docs/auth/ci-cd-auth) recommends trusted private automation. This workflow retains the operator's public repository choice. Only reviewed same-repository branches are trusted. Removing tokens from the child environment is hygiene. Repository code and the agent run on the same worker and do not form a hostile-code security boundary.
 
@@ -20,31 +25,24 @@ Set these project environment variables in the preview environment before the fi
 | `AGENT_WORKFLOW_BASELINE_SHA` | Full reviewed implementation SHA, plaintext. |
 | `CODEX_AUTH_JSON` | Secret **file** variable containing managed ChatGPT `auth.json`. Never a JSON string variable or an API key. |
 | `AGENT_AUTH_WRITE_TOKEN` | Secret Expo token authorized to update this project's preview environment variables. Used only by the controller's subscription-file persistence command. |
-| `AGENT_GITHUB_WRITE_TOKEN` | Required for triage and Issue to PR, secret. A repository-scoped fine-grained personal access token with Contents, Issues, and Pull requests read/write, plus default Metadata read. No Actions, Workflows, administration, organization, store, or production permissions. The parent provisions it. |
-| `AGENT_GITHUB_READ_TOKEN` | Optional repository-scoped read token, secret. Public GitHub source checks work without it but can encounter anonymous rate limits. Ordinary Agentic CI needs no GitHub write token. |
+| `AGENT_GITHUB_WRITE_TOKEN` | Required for triage, Issue to PR, and PR-targeted CI/QA, secret. A repository-scoped fine-grained personal access token with Contents, Issues, and Pull requests read/write, plus default Metadata read. No Actions, Workflows, administration, organization, store, or production permissions. The operator provisions it. |
+| `AGENT_GITHUB_READ_TOKEN` | Optional repository-scoped read token, secret. Public GitHub source checks work without it but can encounter anonymous rate limits. Manual CI/QA without a PR destination is artifact-only and needs no GitHub write token. |
 
 The built-in Developer `EXPO_TOKEN` starts and stops simulators on this account. No separate simulator token is required. Actual cloud probes rejected file-secret updates with both the built-in Developer and Release Manager job tokens. Subscription persistence therefore requires `AGENT_AUTH_WRITE_TOKEN`. Its write permission must succeed before Codex or a simulator starts. Native build, warm repack, subscription-authenticated baseline acceptance, and remote media export have completed. The persistence receipt does not establish that token rotation occurred.
 Do not put unrelated production credentials in this environment.
 
 ## Provision subscription auth
 
-The parent requests credentials only when this runner is ready. Do not read a developer's existing local `auth.json` as part of setup or local tests.
+Provision credentials only when this runner is ready. Do not read a developer's existing local `auth.json` as part of setup or local tests.
 Provision a dedicated managed ChatGPT login through the approved secret-delivery path. Its file must contain `auth_mode: "chatgpt"`, access, ID, and refresh tokens, and `last_refresh`. API-key and external-token auth are rejected.
 
 Use this credential only for this serialized workflow stream. Do not keep using its seed copy on another machine or share it across independent concurrent jobs.
-All workflow runs share `codex-subscription-agentic-ios` with `queue: max` and `cancel_in_progress: false`. The [authenticated concurrency probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) verified three overlapping threads in one server, separate shell environments, healthy shutdown, and auth persistence. Remote simulator capacity and journey acceptance require the separate QA run.
+All workflow runs share `codex-subscription-agentic-ios` with `queue: max` and `cancel_in_progress: false`. The [authenticated concurrency probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) verified three overlapping threads in one server, separate shell environments, healthy shutdown, and auth persistence. The [final QA run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18906-9946-7962-b6db-962f825ffb27) separately proved three owned remote sessions and passing journeys, with 51.629 seconds of common model-turn overlap.
 
 The controller copies the Secret file into a private per-attempt `CODEX_HOME` with file mode 0600. It verifies write-back before starting Codex and sets managed ChatGPT authentication with file storage. Codex refreshes through its own normal flow.
 In `finally`, the controller validates and writes the resulting file back with its dedicated persistence token through the pinned EAS command. The coding agent does not receive that token.
 
-```sh
-EXPO_TOKEN="$AGENT_AUTH_WRITE_TOKEN" bunx eas-cli@25.3.0 env:update preview \
-  --variable-name CODEX_AUTH_JSON --type file \
-  --value "$PRIVATE_CODEX_HOME/auth.json" \
-  --visibility secret --environment preview --non-interactive
-```
-
-The argument is a private file path. Token contents are never arguments, logs, uploads, or repository files. The original seed path is never overwritten locally. Raw CLI output and Codex events are not uploaded. Only controller-admitted evidence is public to the artifact reader.
+The [subscription helper](../.eas/agents/auth.ts) supplies the private file to EAS `env:update`. Token contents are never arguments, logs, uploads, or repository files. The original seed path is never overwritten locally. Raw CLI output and Codex events are not uploaded. Only controller-admitted evidence is public to the artifact reader.
 If write-back fails after a refresh, the result is INCONCLUSIVE. Stop this credential stream and reseed through the approved secret channel before retrying. Do not fall back to an API key.
 Hard worker termination can prevent write-back. Prefer graceful cancellation, then inspect the receipt and reseed if persistence is uncertain.
 
@@ -65,7 +63,7 @@ Normal builds retain their live API, clock, and `appVersion` runtime policy. In 
 `fingerprint.config.cjs` normalizes only the demo `extra.agentDemo.sourceSha` field when hashing Expo config. That embedded JavaScript identity would otherwise force a different native fingerprint on every commit. All other fields remain hashed. This is a fingerprint transform, not a checkout hook or source retarget.
 
 The fixture fixes NBA, October 26, 2026, and America/Toronto. Orbits finish with 100 and Comets with 108. Search finds Avery Stone and Jordan Vale. Images are empty strings that use the existing local fallbacks. Unmatched demo requests fail without contacting the live API.
-Jordan's historical `pointsPerGame` and unknown stat names intentionally still become empty labels in the current player schema. `demo/issues/player-label.md` preserves the original fix criteria. A unit test verifies the seed is still present. Only the real coding workflow candidate may replace that baseline assertion with the repaired expectation. This implementation preserves the seed. The ordinary CI prompt checks Avery's current labels and Jordan's search/back journey.
+On the seeded baseline, Jordan's historical `pointsPerGame` and unknown stat names become empty labels during schema parsing. `demo/issues/player-label.md` preserves the original fix criteria. A baseline unit test verifies the seed. The coding candidate replaces that assertion with the repaired expectation. Keep the seeded baseline separate from the repaired PR. The ordinary CI prompt checks Avery's current labels and Jordan's search/back journey.
 
 ## Dispatch the first cloud slice
 
@@ -84,7 +82,7 @@ bun run eas workflow:run .eas/workflows/agentic-ci-ios.yml \
 `--ref` selects the actual workflow/native source. No checkout hook retargets EAS metadata. The preflight compares branch resolution, candidate SHA, local checkout, baseline ancestry, and any EAS source metadata. Disagreement fails. When ancestry checks need history omitted by a shallow checkout, preflight fetches it from origin and verifies that HEAD has not moved. `fetch_depth` is not an input to EAS checkout.
 The native graph computes a fingerprint, looks up a compatible `agent-preview` simulator build, builds on an empty successful lookup, or repacks a hit. Lookup errors fail rather than masquerading as a cache miss.
 The runner fetches installed build metadata again before starting the simulator. Candidate SHA, profile, platform, simulator suitability, native fingerprint, app ID, runtime, installed build ID, and optional native source build/SHA must agree.
-Manual success and a later real `pull_request` trigger are separate proofs. PR runs target `main` or `release/**`, require a non-draft same-repository head, and recheck the current PR author association and SHA through GitHub. Forks receive no agent run. The parent owns enabling or rehearsing that event path.
+Manual success and a real `pull_request` trigger are separate proofs. PR runs target `main` or `release/**`, require a non-draft same-repository head, and recheck the current PR author association and SHA through GitHub. Forks receive no agent run. The final CI evidence above came from `GITHUB_PULL_REQUEST_SYNCHRONIZE`. QA was dispatched manually with PR number 4.
 
 ## Read the result and recover
 
@@ -96,7 +94,7 @@ Each attempt writes `agent-output/public/<attempt UUID>/`. The EAS artifact cont
 
 Each controller command reserves up to 1.5 seconds for cleanup after exit, cancellation, or timeout. This includes a bounded one-second process inspection and time for signaling and pipe closure. Forced or unconfirmed cleanup cannot produce a successful command. Process tracking covers observed descendants; it does not provide kernel containment for arbitrary daemonizing code.
 
-PASS requires all three acceptance checks, distinct valid screenshots, a controller-observed exact source/fixture/native-runtime/embedded identity, independently observed final scores, a decodable recording of at least one second, successful agent termination, confirmed scoped simulator stop, and persisted auth. Missing evidence, stale files, symlinks, mismatches, malformed JSON, timeouts, or unconfirmed cleanup remain INCONCLUSIVE. An observed acceptance failure with the same evidence requirements is FAIL. Agent exit zero or a PASS sentence alone is insufficient.
+A generic baseline PASS requires all three checks, distinct valid screenshots, a controller-observed exact source/fixture/native-runtime/embedded identity, independently observed final scores, a decodable recording of at least one second, successful agent termination, confirmed scoped simulator stop, and persisted auth. Issue acceptance instead requires the four original issue checks under the same lifecycle rules. Missing evidence, stale files, symlinks, mismatches, malformed JSON, timeouts, or unconfirmed cleanup remain INCONCLUSIVE. An observed acceptance failure with the same evidence requirements is FAIL. Agent exit zero or a PASS sentence alone is insufficient.
 
 Startup is bounded to four minutes and Codex to fifteen minutes. Recording export and device close each have a two-minute limit, simulator cleanup has a two-minute total budget, and auth write-back has one minute. The simulator has a thirty-minute maximum duration as a backstop.
 On partial startup, cleanup queries only the attempt's unique name and tag. It never calls an unscoped stop. A stop receipt must report the owned ID and STOPPED, followed by an independent get confirming STOPPED.
@@ -109,7 +107,7 @@ bun run eas simulator:stop --id "$SESSION_ID" --json --non-interactive
 ```
 
 If the ID was not returned, use the attempt tag `lob-<attempt UUID>` with `simulator:list`, verify its exact name/tag, and stop that ID. An expiry estimate is not confirmed cleanup.
-The workflow's final job fails unless the controller returns the exact state PASS. Ordinary Agentic CI makes no GitHub writes. The two issue controllers below publish only after validating their results. These workflows never merge, release, submit to a store, or publish an update.
+The workflow's final job fails unless the controller returns the exact state PASS. PR-targeted CI and QA publish per-attempt evidence comments after validating their results. Manual CI/QA without a PR destination retains artifacts only. Triage publishes issue evidence; Issue to PR publishes its coding result. These workflows never merge, release, submit to a store, or publish an update.
 
 
 ## Prepare a trusted synthetic issue
@@ -126,7 +124,7 @@ The marker is a supported-demo-issue check, not an authorization grant. Only tru
 The controller snapshots GitHub's numeric and node identity, title, body, author association, URL, and timestamp. It hashes the semantic input separately from the timestamp, since comments change `updated_at`. It also copies the exact original criteria and records their SHA-256. Later jobs require the same issue-content and criteria digests.
 
 The GitHub publisher initially supports a fine-grained PAT. It calls `GET /user` to establish comment ownership. A GitHub App installation token is not established by this implementation. [GitHub's comment API](https://docs.github.com/en/rest/issues/comments) and [PR API](https://docs.github.com/en/rest/pulls/pulls) define the repository permissions used here.
-The controller supplies this token only to its HTTP and Git subprocesses. The Codex child receives neither it, the read token, nor EXPO_TOKEN. Coding tests also receive no such tokens. The EAS worker remains a trusted-code environment, not a hostile-code isolation boundary. Preview secrets may be accessible to trusted worker code. Do not add production secrets there.
+The controller supplies this token only to its HTTP client, pinned native gh attachment command, and coding Git subprocesses. The Codex child receives neither it, the read token, nor EXPO_TOKEN. Coding tests also receive no such tokens. The EAS worker remains a trusted-code environment, not a hostile-code isolation boundary. Preview secrets may be accessible to trusted worker code. Do not add production secrets there.
 
 ## Triage the selected baseline artifact
 
@@ -147,8 +145,8 @@ The four issue checks are `historical-points`, `unknown-stat`, `current-player`,
 REPLICATED requires an observed original-criteria failure, successful Codex termination, distinct admitted PNGs, a decodable owned-session recording, independently observed identity, persisted subscription auth, and confirmed scoped stop. NOT_REPLICATED requires all original checks to pass with that same evidence. The conclusion applies only to the recorded source, fixture, and installed artifact. Source inspection is never reproduction evidence.
 Missing verdicts or evidence, uncertain UI, mismatched identity, and cleanup or persistence failures remain INCONCLUSIVE. An incomplete attempt can receive an explicitly inconclusive issue comment when its target/input identity is known. The workflow still fails.
 
-After result validation and an unchanged-input check, the controller upserts one issue comment using an issue-and-target marker. It verifies the existing comment belongs to the token owner, rejects duplicate or foreign markers, and links the workflow artifacts and owned session. Screenshot, recording, identity, source, build, fixture, criteria, and issue digests identify the evidence. It never closes or labels the issue.
-A publication failure preserves the device `result.json`, fails the workflow status, and leaves the GitHub update unverified. `publication.json` records a successful comment receipt.
+After result validation, the controller creates or reconciles a per-attempt issue evidence comment. It rechecks the live issue input before each create or status update, verifies author and exact content, rejects duplicate or foreign markers, and links the workflow and owned session. Screenshot, recording, identity, source, build, fixture, criteria, and issue digests identify the evidence. It never closes or labels the issue.
+A publication failure preserves the device `result.json`, fails the workflow status, and leaves the GitHub update unverified. `publication-{manifest,intent,invocation,receipt}-*.json` retain delivery state and native-write reconciliation. Preserve them for retries. The separate Issue to PR coding controller still uses `publication.json`.
 
 ## Turn the issue into one reviewable PR
 
@@ -172,6 +170,8 @@ A human branch commit, observed moved base, changed issue/criteria, closed or co
 NO_CHANGE requires an explicit no-change agent verdict and no source diff, commit, or PR. An inconclusive verdict or contradictory diff remains INCONCLUSIVE. REJECTED means an out-of-bounds patch. PR_READY means controller local checks passed, the PR receipt's base SHA matched the frozen target, and the final target check still matched. A later target advance requires fresh validation. Native acceptance remains separate.
 
 The PR body carries a versioned immutable acceptance receipt with the original target, issue identity/content digest, and original criteria digest. Artifacts retain `issue-input.json`, `criteria.md`, `acceptance.json`, `checks.json`, `publication.json`, `result.json`, and the report. A receipt is not cryptographic provenance against a trusted maintainer deliberately forging it.
+
+Keep PR 4 open for the prepared demo. Its historical duplicate-dispatch proof predates the human controller merges into its branch. After a human merge, use a fresh marked issue for another coding exercise. Select a reviewed target that still contains the seeded defect and the current controller baseline. Reusing the old issue is not a reset, and a target containing the fix cannot demonstrate the original reproduction. Preserve the frozen marker, fixture, and criteria.
 
 ## Check the repaired PR against the original criteria
 
@@ -199,4 +199,6 @@ Manual issue acceptance requires both digests. It cannot silently derive a new a
 
 Run `bun run check` and `bun run check:agentic`, then validate each changed workflow with EAS CLI 25.3.0. Controller tests use synthetic auth, real temporary Git repositories, local HTTP GitHub fixtures, fake unavailable agent/cloud executables, and real decodable media. They make no real GitHub writes or cloud runs.
 
-Full QA journey evidence remains under rehearsal. Real issue-label events dispatched triage and coding from `release/prizepicks-demo`. Triage returned REPLICATED, coding opened PR 4, and a repeated request reused the same head and PR without loading subscription auth. Coding waited with no jobs while triage owned the shared subscription stream. Original-issue PR acceptance passed on the repaired candidate, and a separate triage run returned NOT_REPLICATED for that artifact. See the presentation guide for exact runs and limitations.
+All four workflows now have cloud evidence. Historical label events dispatched triage and coding from `release/prizepicks-demo`. Coding waited while triage owned the shared subscription stream. Final-head CI passed the four original issue checks, and QA passed all three generic journeys. Follow [the QA runbook](qa-swarm.md) for prepared-tool installation, the Linux probe, and swarm dispatch. See [the presentation evidence](prizepicks-demo.md#current-evidence) for final and historical revisions, media limitations, and the intentionally open PR.
+
+Device checks now publish inline screenshots, edited playback, and unchanged original downloads through the [shared evidence publisher](rich-evidence.md). PR-targeted success also requires complete delivery. The original device result and acceptance receipt remain separate from publication status.
