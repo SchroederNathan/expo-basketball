@@ -1,0 +1,9 @@
+{
+  "name": "lob-qa-tools",
+  "private": true,
+  "dependencies": {
+    "eas-cli": "25.3.0",
+    "@openai/codex": "0.165.0",
+    "agent-device": "0.21.33"
+  }
+}

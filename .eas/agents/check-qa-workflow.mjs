@@ -38,3 +38,26 @@ assert.equal(probe.jobs.probe.steps.at(-1).if, '${{ always() }}');
 assert.equal(probe.jobs.probe.steps.at(-1).with.path, 'agent-output/probe/public/**/*');
 assert.ok(probe.jobs.probe.steps.some((step) => step.run === 'bun .eas/agents/qa-swarm.ts preflight'));
 assert.ok(probe.jobs.probe.steps.some((step) => step.run?.includes('bun .eas/agents/codex-probe.ts agent-output/probe/public/result.json')));
+
+const toolsProbe = Bun.YAML.parse(await readFile('.eas/workflows/qa-tools-probe.yml', 'utf8'));
+assert.deepEqual(toolsProbe.concurrency, workflow.concurrency);
+assert.equal(toolsProbe.permissions.account.role, 'developer');
+assert.equal(toolsProbe.defaults.tools.bun, '1.2.22');
+assert.deepEqual(Object.keys(toolsProbe.on), ['workflow_dispatch']);
+for (const input of ['repository', 'target_ref', 'candidate_sha']) assert.equal(toolsProbe.on.workflow_dispatch.inputs[input].required, true);
+assert.deepEqual(Object.keys(toolsProbe.jobs), ['probe']);
+assert.equal(toolsProbe.jobs.probe.environment, 'preview');
+assert.equal(toolsProbe.jobs.probe.env.AGENT_SOURCE_SHA, '${{ inputs.candidate_sha }}');
+assert.ok(toolsProbe.jobs.probe.steps.some((step) => step.run?.includes('bun .eas/agents/qa-tools-probe.ts')));
+const upload = toolsProbe.jobs.probe.steps.find((step) => step.uses === 'eas/upload_artifact');
+assert.equal(upload.if, '${{ always() }}');
+assert.equal(upload.with.path, 'agent-output/qa-tools/public/**/*');
+const gate = toolsProbe.jobs.probe.steps.at(-1);
+assert.equal(gate.if, '${{ always() }}');
+assert.ok(gate.run.includes('r.status !== "PASS"'));
+assert.ok(gate.run.includes('r.platform !== "linux"'));
+for (const name of ['qa-swarm.ts', 'qa-lanes.ts', 'qa-tools.ts']) {
+  const source = await readFile(`.eas/agents/${name}`, 'utf8');
+  assert.ok(!/file:\s*['"](?:bunx|npx)['"]/.test(source), `${name} cannot resolve tools at runtime.`);
+  assert.ok(!/(?:Use only|Read) (?:bunx|npx)\b/.test(source), `${name} cannot tell model shells to resolve tools.`);
+}
