@@ -57,7 +57,7 @@ async function scenario(mode: string, inspect: (context: { options: SwarmOptions
   const executable = (tool: string) => ({ file: process.execPath, args: [resolve('.eas/agents/qa-test-fixture.mjs'), config, tool] });
   const cancellation = new AbortController();
   const options: SwarmOptions = { cwd, outputRoot: join(root, 'output'), signal: cancellation.signal,
-    env: { PATH: process.env.PATH, HOME: root, CODEX_AUTH_JSON: seed, EXPO_TOKEN: 'synthetic-expo-token',
+    env: { PATH: process.env.PATH, HOME: root, CODEX_AUTH_JSON: seed, EXPO_TOKEN: 'synthetic-expo-token', AGENT_AUTH_WRITE_TOKEN: 'synthetic-write-token',
       AGENT_TRUSTED_AUTOMATION: 'enabled', AGENT_TRUSTED_REPOSITORY: 'SchroederNathan/expo-basketball',
       AGENT_REPOSITORY: 'SchroederNathan/expo-basketball', AGENT_SOURCE_REF: 'candidate', AGENT_SOURCE_SHA: sha,
       AGENT_WORKFLOW_BASELINE_SHA: sha, AGENT_BUILD_ID: installedBuild, AGENT_FINGERPRINT: 'a'.repeat(40) },

@@ -7,12 +7,13 @@ export const shaSchema = z.string().regex(/^[a-f0-9]{40}$/).brand('Sha');
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/).brand('Digest');
 export const buildIdSchema = z.uuid().brand('BuildId');
 export const sourceSchema = z.strictObject({ ref: z.string().min(1).max(200), sha: shaSchema });
+export type Source = z.infer<typeof sourceSchema>;
+export const issueRefSchema = z.strictObject({ number: z.number().int().positive(), id: z.number().int().positive(), nodeId: z.string().min(1), sha256: digestSchema });
 export const fixtureSchema = z.strictObject({
   id: z.literal('prizepicks-v1'), sha256: digestSchema,
   date: z.literal('20261026'), zone: z.literal('America/Toronto'),
 });
-export const targetSchema = z.strictObject({
-  kind: z.literal('check'),
+const targetFields = {
   controller: sourceSchema,
   source: sourceSchema,
   repository: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
@@ -24,13 +25,18 @@ export const targetSchema = z.strictObject({
   fingerprint: z.string().regex(/^[a-f0-9]{40,64}$/),
   runtime: z.literal('1.0.0'),
   fixture: fixtureSchema,
-  criteria: z.strictObject({ path: z.literal('.eas/agents/check-ios.md'), sha256: digestSchema }),
   native: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('built'), installed: buildIdSchema, sourceSha: shaSchema }),
     z.strictObject({ kind: z.literal('repacked'), source: buildIdSchema, sourceSha: shaSchema, installed: buildIdSchema }),
   ]),
   bundle: z.strictObject({ kind: z.literal('embedded'), candidate: shaSchema }),
-}).superRefine((target, ctx) => {
+};
+export const targetSchema = z.discriminatedUnion('kind', [
+  z.strictObject({ ...targetFields, kind: z.literal('check'), issue: z.null(),
+    criteria: z.strictObject({ path: z.literal('.eas/agents/check-ios.md'), sha256: digestSchema }) }),
+  z.strictObject({ ...targetFields, kind: z.enum(['triage', 'acceptance']), issue: issueRefSchema,
+    criteria: z.strictObject({ path: z.literal('demo/issues/player-label.md'), sha256: digestSchema }) }),
+]).superRefine((target, ctx) => {
   if (target.controller.sha !== target.source.sha || target.bundle.candidate !== target.source.sha) {
     ctx.addIssue({ code: 'custom', message: 'Controller, checkout, and candidate SHA must agree.' });
   }
@@ -48,22 +54,26 @@ export const sessionSchema = z.strictObject({
   attemptId: z.uuid(), expiresAt: z.iso.datetime(),
 });
 export type Session = z.infer<typeof sessionSchema>;
-export const checkIdSchema = z.enum(['scores', 'current-player', 'search-back']);
-export const verdictSchema = z.strictObject({
-  state: z.enum(['PASS', 'FAIL', 'INCONCLUSIVE']),
-  checks: z.array(z.strictObject({
-    id: checkIdSchema, state: z.enum(['PASS', 'FAIL', 'BLOCKED']),
-    detail: z.string().min(1).max(2000), screenshot: z.string().regex(/^[a-z0-9-]+\.png$/),
-  })).length(3),
-}).superRefine((verdict, ctx) => {
-  if (new Set(verdict.checks.map((check) => check.id)).size !== 3) {
-    ctx.addIssue({ code: 'custom', message: 'Each acceptance check must appear exactly once.' });
-  }
-  const expected = verdict.checks.some((check) => check.state === 'BLOCKED') ? 'INCONCLUSIVE'
-    : verdict.checks.some((check) => check.state === 'FAIL') ? 'FAIL' : 'PASS';
-  if (verdict.state !== expected) ctx.addIssue({ code: 'custom', message: 'Verdict disagrees with checks.' });
-});
-export type Verdict = z.infer<typeof verdictSchema>;
+function checksSchema<const Ids extends readonly [string, ...string[]]>(ids: Ids) {
+  return z.strictObject({
+    state: z.enum(['PASS', 'FAIL', 'INCONCLUSIVE']),
+    checks: z.array(z.strictObject({
+      id: z.enum(ids), state: z.enum(['PASS', 'FAIL', 'BLOCKED']),
+      detail: z.string().min(1).max(2000), screenshot: z.string().regex(/^[a-z0-9-]+\.png$/),
+    })).length(ids.length),
+  }).superRefine((verdict, ctx) => {
+    if (new Set(verdict.checks.map((check) => check.id)).size !== ids.length) {
+      ctx.addIssue({ code: 'custom', message: 'Each acceptance check must appear exactly once.' });
+    }
+    const expected = verdict.checks.some((check) => check.state === 'BLOCKED') ? 'INCONCLUSIVE'
+      : verdict.checks.some((check) => check.state === 'FAIL') ? 'FAIL' : 'PASS';
+    if (verdict.state !== expected) ctx.addIssue({ code: 'custom', message: 'Verdict disagrees with checks.' });
+  });
+}
+export const verdictSchema = checksSchema(['scores', 'current-player', 'search-back']);
+export const issueVerdictSchema = checksSchema(['historical-points', 'unknown-stat', 'current-player', 'search-back']);
+const deviceVerdictSchema = z.union([verdictSchema, issueVerdictSchema]);
+export type Verdict = z.infer<typeof deviceVerdictSchema>;
 
 export const terminationSchema = z.discriminatedUnion('kind', [
   z.strictObject({ kind: z.literal('exited'), code: z.number().int() }),
@@ -86,7 +96,7 @@ const evidenceSchema = z.strictObject({
 });
 const recordFields = {
   version: z.literal(1), runId: z.string().min(1), runUrl: z.url().regex(/^https:\/\/expo\.dev\/[^?#]+$/).nullable(),
-  attemptId: z.uuid(), jobKey: z.literal('check-ios'),
+  attemptId: z.uuid(), jobKey: z.enum(['check-ios', 'triage-ios', 'acceptance-ios']),
   target: targetSchema.nullable(), session: sessionSchema.nullable(),
   startedAt: z.iso.datetime(), finishedAt: z.iso.datetime(),
   termination: terminationSchema, cleanup: cleanupSchema,
@@ -97,14 +107,21 @@ export const resultSchema = z.discriminatedUnion('state', [
   z.strictObject({ ...recordFields, target: targetSchema, session: sessionSchema,
     termination: z.strictObject({ kind: z.literal('exited'), code: z.literal(0) }),
     cleanup: z.strictObject({ state: z.literal('stopped'), sessionId: z.uuid() }), auth: z.literal('persisted'),
-    state: z.enum(['PASS', 'FAIL']), verdict: verdictSchema, evidence: evidenceSchema }),
+    state: z.enum(['PASS', 'FAIL', 'REPLICATED', 'NOT_REPLICATED']), verdict: deviceVerdictSchema, evidence: evidenceSchema }),
   z.strictObject({ ...recordFields, state: z.literal('INCONCLUSIVE'), reason: z.string(),
-    agentObservation: verdictSchema.nullable(), evidence: z.array(fileSchema) }),
+    agentObservation: deviceVerdictSchema.nullable(), evidence: z.array(fileSchema) }),
 ]).superRefine((result, ctx) => {
-  if (result.state !== 'INCONCLUSIVE' && (result.verdict.state !== result.state ||
-    result.cleanup.sessionId !== result.session.id || result.evidence.recordingSessionId !== result.session.id ||
-    result.session.attemptId !== result.attemptId)) {
-    ctx.addIssue({ code: 'custom', message: 'Result, verdict, attempt, recording, and cleanup identities disagree.' });
+  if (result.state !== 'INCONCLUSIVE') {
+    const jobKey = result.target.kind === 'check' ? 'check-ios' : result.target.kind === 'triage' ? 'triage-ios' : 'acceptance-ios';
+    if (result.jobKey !== jobKey) ctx.addIssue({ code: 'custom', message: 'Job and task disagree.' });
+    const schema = result.target.kind === 'check' ? verdictSchema : issueVerdictSchema;
+    if (!schema.safeParse(result.verdict).success) ctx.addIssue({ code: 'custom', message: 'Wrong task verdict.' });
+    const state = result.target.kind === 'triage' ? result.verdict.state === 'FAIL' ? 'REPLICATED' : 'NOT_REPLICATED' : result.verdict.state;
+    if (state !== result.state ||
+      result.cleanup.sessionId !== result.session.id || result.evidence.recordingSessionId !== result.session.id ||
+      result.session.attemptId !== result.attemptId || result.verdict.state === 'INCONCLUSIVE') {
+      ctx.addIssue({ code: 'custom', message: 'Result, verdict, attempt, recording, and cleanup identities disagree.' });
+    }
   }
 });
 export type Result = z.infer<typeof resultSchema>;

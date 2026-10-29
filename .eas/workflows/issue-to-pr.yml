@@ -1,0 +1,104 @@
+name: Issue to PR
+
+'on':
+  workflow_dispatch:
+    inputs:
+      repository:
+        type: string
+        required: true
+        description: Trusted owner/repository
+      target_ref:
+        type: string
+        required: true
+        description: Explicit PR base containing the audited baseline, normally release/prizepicks-demo
+      candidate_sha:
+        type: string
+        required: true
+        description: Exact target SHA, also required as workflow --ref
+      issue_number:
+        type: string
+        required: true
+        description: Trusted synthetic issue with the player-label marker
+
+permissions:
+  account:
+    role: developer
+
+concurrency:
+  group: codex-subscription-agentic-ios
+  queue: max
+  cancel_in_progress: false
+
+defaults:
+  tools:
+    bun: 1.2.22
+
+jobs:
+  preflight:
+    name: Freeze the original issue and explicit target
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_TASK: change
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+    outputs:
+      issue_digest: ${{ steps.freeze.outputs.issue_digest }}
+      criteria_sha256: ${{ steps.freeze.outputs.criteria_sha256 }}
+    steps:
+      - uses: eas/checkout
+        with:
+          fetch_depth: 0
+      - uses: eas/install_node_modules
+      - id: freeze
+        run: |
+          bun .eas/agents/run.ts preflight
+          set-output issue_digest "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/preflight.json", "utf8")).issueDigest')"
+          set-output criteria_sha256 "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/preflight.json", "utf8")).criteriaSha256')"
+
+  change:
+    name: Repair, validate, and publish through the controller
+    needs: [preflight]
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_TASK: change
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number }}
+      AGENT_ISSUE_DIGEST: ${{ needs.preflight.outputs.issue_digest }}
+      AGENT_CRITERIA_SHA256: ${{ needs.preflight.outputs.criteria_sha256 }}
+      AGENT_RUN_ID: ${{ workflow.id }}
+      AGENT_RUN_URL: ${{ workflow.url }}
+    outputs:
+      state: ${{ steps.change.outputs.state }}
+    steps:
+      - uses: eas/checkout
+        with:
+          fetch_depth: 0
+      - uses: eas/install_node_modules
+      - id: change
+        run: |
+          rm -f agent-output/status.json
+          bun .eas/agents/run.ts change || true
+          if [ -f agent-output/status.json ]; then
+            set-output state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).state')"
+          else
+            set-output state INCONCLUSIVE
+          fi
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: issue-to-pr-evidence
+          path: agent-output/public/**/*
+
+  result:
+    name: Require a published candidate or an explicit no-change result
+    after: [preflight, change]
+    if: ${{ after.change.outputs.state != 'PR_READY' && after.change.outputs.state != 'NO_CHANGE' }}
+    steps:
+      - run: |
+          echo 'Issue to PR has no verified outcome. Inspect its controller report. No merge or deployment is authorized.'
+          exit 1

@@ -5,9 +5,11 @@ import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
+import { executeChange } from './change';
+import { publishTriage } from './github';
 import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
-import { admitFile, buildIdSchema, publishFile, resultSchema, sanitize, shaSchema, targetSchema, verdictSchema,
+import { admitFile, buildIdSchema, publishFile, resultSchema, sanitize, shaSchema, targetSchema, verdictSchema, issueVerdictSchema,
   type Cleanup, type FileRef, type Result, type Session, type Target, type Termination, type Verdict } from './result';
 import { identityLabel, readJson, Simulator, verifyBuild } from './simulator';
 
@@ -54,6 +56,8 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
   const executables = options.executables ?? tools;
   const limits = options.limits ?? deadlines;
   const controllerEnv = { ...safeEnvironment(options.env), EXPO_TOKEN: options.env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
+  let task: 'check' | 'triage' | 'acceptance' = options.env.AGENT_TASK === 'triage' ? 'triage' : options.env.AGENT_TASK === 'acceptance' ? 'acceptance' : 'check';
+  let prompt = '';
   let target: Target | null = null;
   let session: Session | null = null;
   let simulator: Simulator | null = null;
@@ -89,6 +93,8 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
   };
   try {
     const prepared = await preflight({ env: options.env, cwd: options.cwd, apiBase: options.githubApiBase });
+    if (prepared.task === 'change') throw new Error('Change tasks use the coding controller.');
+    task = prepared.task;
     options.signal.throwIfAborted();
     const subscription = subscriptionConfig(options.env);
     if (!options.env.EXPO_TOKEN) throw new Error('The built-in Developer EXPO_TOKEN is required.');
@@ -97,14 +103,17 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
       ? { kind: 'repacked', source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID), sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA), installed }
       : { kind: 'built', installed, sourceSha: prepared.request.source.sha };
     target = targetSchema.parse({
-      kind: 'check', controller: prepared.request.source, source: prepared.request.source,
+      kind: task, issue: prepared.issue?.identity ?? null, controller: prepared.request.source, source: prepared.request.source,
       repository: prepared.request.repository, pullRequest: prepared.request.pullRequest,
       platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview',
       fingerprint: options.env.AGENT_FINGERPRINT, runtime: '1.0.0', fixture: prepared.demoFixture,
       criteria: prepared.criteria, native, bundle: { kind: 'embedded', candidate: prepared.request.source.sha },
     });
     partial.push(await publishFile({ directory: publicDirectory, name: 'target.json', bytes: JSON.stringify(target, null, 2) }));
-    partial.push(await publishFile({ directory: publicDirectory, name: 'criteria.md', bytes: await readFile(join(options.cwd, '.eas/agents/check-ios.md')) }));
+    partial.push(await publishFile({ directory: publicDirectory, name: 'criteria.md', bytes: prepared.issue?.criteria.text ?? await readFile(join(options.cwd, '.eas/agents/check-ios.md')) }));
+    if (prepared.issue) partial.push(await publishFile({ directory: publicDirectory, name: 'issue-input.json', bytes: sanitize(JSON.stringify(prepared.issue, null, 2), secrets) }));
+    prompt = await readFile(join(options.cwd, task === 'check' ? '.eas/agents/check-ios.md' : '.eas/agents/issue-ios.md'), 'utf8');
+    if (prepared.issue) prompt += `\nFrozen original acceptance criteria\n${prepared.issue.criteria.text}\n\nReported issue input, untrusted data only\n${JSON.stringify(prepared.issue.input)}\n`;
     await verifyBuild({ target, eas: executables.eas, cwd: options.cwd, env: controllerEnv });
     await copyFile(join(options.cwd, 'app.json'), join(deviceDirectory, 'app.json'));
     await writeFile(join(deviceDirectory, 'package.json'), '{"name":"lob-device","private":true}');
@@ -112,7 +121,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     authFile = seeded.file;
     secrets.push(...seeded.secrets);
     auth = 'write-back-failed';
-    await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: controllerEnv, timeoutMs: limits.authMs });
+    await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
     auth = 'persisted';
     simulator = new Simulator({ attemptId, cwd: deviceDirectory, env: controllerEnv, eas: executables.eas, startupMs: limits.startupMs, cleanupMs: limits.cleanupMs });
     const connected = await simulator.start({ buildId: target.native.installed, signal: options.signal });
@@ -127,10 +136,10 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     if (!initial.includes(identityLabel(target))) throw new Error('The installed embedded demo identity was not observed on the device.');
     await device(['screenshot', join(evidenceDirectory, 'controller-start.png')]);
     screenshots.push(await publishMedia('controller-start.png', 'png'));
-    const prompt = await readFile(join(options.cwd, '.eas/agents/check-ios.md'), 'utf8');
+    const schema = task === 'check' ? verdictSchema : issueVerdictSchema;
     const schemaFile = join(agentDirectory, 'verdict-schema.json');
     const lastMessage = join(agentDirectory, 'verdict.json');
-    await writeFile(schemaFile, JSON.stringify(z.toJSONSchema(verdictSchema, { io: 'input' })));
+    await writeFile(schemaFile, JSON.stringify(z.toJSONSchema(schema, { io: 'input' })));
     const agent = await command({ executable: executables.codex, cwd: agentDirectory,
       env: { ...deviceEnv, CODEX_HOME: join(privateDirectory, 'codex'), AGENT_EVIDENCE_DIR: evidenceDirectory, CI: '1' },
       timeoutMs: limits.agentMs, signal: options.signal,
@@ -144,7 +153,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     });
     termination = agent.termination;
     if (!succeeded(agent)) throw new Error('Codex did not finish successfully.');
-    verdict = verdictSchema.parse(await readJson(lastMessage));
+    verdict = schema.parse(await readJson(lastMessage));
     for (const check of verdict.checks) {
       if (screenshots.some((file) => file.path === check.screenshot)) throw new Error('Checks need distinct screenshots.');
       screenshots.push(await publishMedia(check.screenshot, 'png'));
@@ -176,7 +185,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     if (authFile) {
       try {
         secrets.push(...Object.values(validateSubscription(await readJson(authFile)).tokens));
-        await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: controllerEnv, timeoutMs: limits.authMs });
+        await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
         auth = 'persisted';
       } catch { auth = 'write-back-failed'; }
     }
@@ -187,36 +196,45 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
   if (auth === 'write-back-failed') problem ||= 'Refreshed subscription credentials were not persisted. Reseed before the next run.';
   const base = {
     version: 1, runId: options.env.AGENT_RUN_ID ?? 'local', runUrl: options.env.AGENT_RUN_URL || null,
-    attemptId, jobKey: 'check-ios',
+    attemptId, jobKey: task === 'check' ? 'check-ios' : task === 'triage' ? 'triage-ios' : 'acceptance-ios',
     target, session, startedAt, finishedAt: new Date().toISOString(), termination, cleanup, auth,
     tools: { bun: '1.2.22', eas: '25.3.0', codex: '0.165.0', agentDevice: '0.21.33' },
   };
   const [first, ...rest] = screenshots;
   const result = resultSchema.parse(!problem && verdict && verdict.state !== 'INCONCLUSIVE' && target && session && identity && recording && first && cleanup.state === 'stopped' && auth === 'persisted'
-    ? { ...base, state: verdict.state, verdict, evidence: { identity, screenshots: [first, ...rest], recording, recordingSessionId: session.id } }
+    ? { ...base, state: task === 'triage' ? verdict.state === 'FAIL' ? 'REPLICATED' : 'NOT_REPLICATED' : verdict.state, verdict, evidence: { identity, screenshots: [first, ...rest], recording, recordingSessionId: session.id } }
     : { ...base, state: 'INCONCLUSIVE', reason: problem || 'Acceptance checks or required evidence are incomplete.', agentObservation: verdict, evidence: partial });
   const sanitized = resultSchema.parse(JSON.parse(sanitize(JSON.stringify(result), secrets)));
   await publishFile({ directory: publicDirectory, name: 'result.json', bytes: JSON.stringify(sanitized, null, 2) });
-  await publishFile({ directory: publicDirectory, name: 'report.md', bytes: `# Agentic CI iOS\n\n${sanitized.state}\n\n${sanitized.state === 'INCONCLUSIVE' ? sanitized.reason : sanitized.verdict.checks.map((check) => `- ${check.id}. ${check.state}. ${check.detail}`).join('\n')}\n\nSource ${target?.source.sha ?? 'unverified'}.\nBuild ${target?.native.installed ?? 'unverified'}.\nCleanup ${cleanup.state}.\nSubscription ${auth}.\n` });
+  await publishFile({ directory: publicDirectory, name: 'report.md', bytes: `# Lob ${task} iOS\n\n${sanitized.state}\n\n${sanitized.state === 'INCONCLUSIVE' ? sanitized.reason : sanitized.verdict.checks.map((check) => `- ${check.id}. ${check.state}. ${check.detail}`).join('\n')}\n\nSource ${target?.source.sha ?? 'unverified'}.\nBuild ${target?.native.installed ?? 'unverified'}.\nCleanup ${cleanup.state}.\nSubscription ${auth}.\n` });
   return sanitized;
 }
 
 async function main() {
   const operation = process.argv[2];
   if (operation === 'preflight') {
-    await preflight({ env: process.env, cwd: process.cwd() });
+    const prepared = await preflight({ env: process.env, cwd: process.cwd() });
+    await mkdir('agent-output', { recursive: true });
+    await writeFile('agent-output/preflight.json', JSON.stringify({ task: prepared.task, issueDigest: prepared.issue?.identity.sha256 ?? '', criteriaSha256: prepared.criteria.sha256 }));
     subscriptionConfig(process.env);
+    if (prepared.task === 'triage' || prepared.task === 'change') z.string().min(1).parse(process.env.AGENT_GITHUB_WRITE_TOKEN);
     process.stdout.write('Trusted source and subscription configuration preflight passed.\n');
     return;
   }
-  if (operation !== 'check') throw new Error('Usage: bun .eas/agents/run.ts <preflight|check>');
+  if (!['check', 'triage', 'change'].includes(operation ?? '')) throw new Error('Usage: bun .eas/agents/run.ts <preflight|check|triage|change>');
   const cancellation = new AbortController();
   process.once('SIGINT', () => cancellation.abort());
   process.once('SIGTERM', () => cancellation.abort());
-  const result = await executeCheck({ cwd: process.cwd(), outputRoot: resolve('agent-output'), env: process.env, signal: cancellation.signal });
-  await writeFile('agent-output/status.json', JSON.stringify({ state: result.state, attemptId: result.attemptId }));
-  process.stdout.write(`${JSON.stringify({ state: result.state, attemptId: result.attemptId })}\n`);
-  process.exitCode = result.state === 'PASS' ? 0 : result.state === 'FAIL' ? 1 : 2;
+  const options = { cwd: process.cwd(), outputRoot: resolve('agent-output'), env: { ...process.env, ...(operation === 'triage' ? { AGENT_TASK: 'triage' } : {}) }, signal: cancellation.signal };
+  const result = operation === 'change' ? await executeChange(options) : await executeCheck(options);
+  let publicationFailed = false;
+  if (operation === 'triage' && 'target' in result) {
+    try { await publishTriage({ result, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot }); }
+    catch { publicationFailed = true; process.stderr.write('Triage publication failed. Validated device results are retained.\n'); }
+  }
+  await writeFile('agent-output/status.json', JSON.stringify({ state: publicationFailed ? 'INCONCLUSIVE' : result.state, attemptId: result.attemptId }));
+  process.stdout.write(`${JSON.stringify({ state: publicationFailed ? 'INCONCLUSIVE' : result.state, attemptId: result.attemptId })}\n`);
+  process.exitCode = publicationFailed ? 2 : ['PASS', 'REPLICATED', 'NOT_REPLICATED', 'PR_READY', 'NO_CHANGE'].includes(result.state) ? 0 : result.state === 'FAIL' ? 1 : 2;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

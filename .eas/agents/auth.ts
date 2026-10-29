@@ -1,9 +1,9 @@
 import { copyFile, mkdir, readFile, chmod, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import { command, succeeded, type Command } from './process';
+import { command, safeEnvironment, succeeded, type Command } from './process';
 
-const subscriptionSchema = z.strictObject({
+const subscriptionSchema = z.object({
   auth_mode: z.literal('chatgpt'),
   OPENAI_API_KEY: z.null().optional(),
   tokens: z.object({
@@ -25,6 +25,7 @@ export function subscriptionConfig(env: NodeJS.ProcessEnv) {
   }
   const file = env.CODEX_AUTH_JSON;
   if (!file || !isAbsolute(file)) throw new Error('CODEX_AUTH_JSON must be a Secret EAS file variable.');
+  if (!env.AGENT_AUTH_WRITE_TOKEN) throw new Error('AGENT_AUTH_WRITE_TOKEN is required for subscription file persistence.');
   return { file };
 }
 
@@ -42,9 +43,11 @@ export async function persistSubscription({ file, eas, cwd, env, timeoutMs }: {
   file: string; eas: Command; cwd: string; env: NodeJS.ProcessEnv; timeoutMs: number;
 }) {
   validateSubscription(JSON.parse(await readFile(file, 'utf8')));
-  const result = await command({ executable: eas, cwd, env, timeoutMs,
+  if (!env.AGENT_AUTH_WRITE_TOKEN) throw new Error('AGENT_AUTH_WRITE_TOKEN is required for subscription file persistence.');
+  const writeEnvironment = { ...safeEnvironment(env), EXPO_TOKEN: env.AGENT_AUTH_WRITE_TOKEN, CI: '1', EAS_NO_VCS: '1' };
+  const result = await command({ executable: eas, cwd, env: writeEnvironment, timeoutMs,
     args: ['env:update', 'preview', '--variable-name', 'CODEX_AUTH_JSON', '--type', 'file',
       '--value', file, '--visibility', 'secret', '--environment', 'preview', '--non-interactive'],
   });
-  if (!succeeded(result)) throw new Error('Subscription secure write-back failed. Reseed before another run.');
+  if (!succeeded(result)) throw new Error('Subscription secure write-back failed. Check AGENT_AUTH_WRITE_TOKEN authorization.');
 }

@@ -17,9 +17,7 @@ export async function probe({ env, cwd, output, signal, codex = codexCommand, ea
   env: NodeJS.ProcessEnv; cwd: string; output: string; signal: AbortSignal; codex?: Command; eas?: Command; timeoutMs?: number;
 }) {
   const subscription = subscriptionConfig(env);
-  if (!env.EXPO_TOKEN) throw new Error('EXPO_TOKEN is required for secure subscription writeback.');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'lob-codex-probe-')));
-  const controllerEnv = { ...safeEnvironment(env), EXPO_TOKEN: env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
   let server: CodexServer | null = null;
   let authFile: string | null = null;
   let persisted = false;
@@ -31,7 +29,7 @@ export async function probe({ env, cwd, output, signal, codex = codexCommand, ea
   try {
     const auth = await seedSubscription({ seedFile: subscription.file, directory: join(directory, 'codex') });
     authFile = auth.file;
-    await persistSubscription({ file: authFile, eas, cwd, env: controllerEnv, timeoutMs: 60_000 });
+    await persistSubscription({ file: authFile, eas, cwd, env, timeoutMs: 60_000 });
     signal.throwIfAborted();
     await mkdir(join(directory, 'home'));
     server = new CodexServer({ executable: codex, cwd: directory,
@@ -86,7 +84,7 @@ process.stdout.write(JSON.stringify({ marker: proof.marker, threadId: proof.thre
       stopped = serverStop.state === 'stopped' && serverStop.healthy && !serverStop.forced;
     }
     if (authFile) {
-      try { await persistSubscription({ file: authFile, eas, cwd, env: controllerEnv, timeoutMs: 60_000 }); persisted = true; }
+      try { await persistSubscription({ file: authFile, eas, cwd, env, timeoutMs: 60_000 }); persisted = true; }
       catch { problem = 'Subscription writeback failed. Reseed before another run.'; }
     }
     try { await rm(directory, { recursive: true, force: true }); }

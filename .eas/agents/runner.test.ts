@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
 import { subscriptionConfig, validateSubscription } from './auth';
+import { publishTriage } from './github';
+import { demoIssueMarker, acceptanceMarker, acceptanceSchema, issueDigest } from './issue';
 import { executeCheck, type CheckOptions } from './run';
 import { admitFile, digest, resultSchema, targetSchema, verdictSchema } from './result';
 
@@ -30,8 +32,9 @@ async function scenario(kind: string, inspect: (context: { options: CheckOptions
   const root = await mkdtemp(join(tmpdir(), 'lob-runner-test-'));
   const cwd = join(root, 'repo');
   await mkdir(join(cwd, 'demo/fixtures'), { recursive: true });
+  await mkdir(join(cwd, 'demo/issues'), { recursive: true });
   await mkdir(join(cwd, '.eas/agents'), { recursive: true });
-  for (const name of ['demo/fixtures/prizepicks-v1.json', '.eas/agents/check-ios.md', 'app.json', 'package.json']) {
+  for (const name of ['demo/fixtures/prizepicks-v1.json', '.eas/agents/check-ios.md', '.eas/agents/issue-ios.md', 'demo/issues/player-label.md', 'app.json', 'package.json']) {
     await copyFile(resolve(name), join(cwd, name));
   }
   const git = (args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
@@ -81,18 +84,36 @@ if (tool === 'eas') {
   const authPath=join(process.env.CODEX_HOME,'auth.json');
   const auth=JSON.parse(readFileSync(authPath,'utf8')); auth.tokens.refresh_token='refreshed-synthetic-token'; writeFileSync(authPath,JSON.stringify(auth));
   if(c.kind==='timeout') await new Promise(r=>setTimeout(r,30000));
-  const checks=['scores','current-player','search-back'].map(id=>({id,state:c.kind==='observed-fail'&&id==='scores'?'FAIL':'PASS',detail:'Observed '+id+' on the device.',screenshot:id+'.png'}));
-  for(const check of checks) if(c.kind!=='missing-screenshot') copyFileSync(join(c.mediaDirectory,'screen.png'),join(process.env.AGENT_EVIDENCE_DIR,check.screenshot));
-  writeFileSync(args[args.indexOf('--output-last-message')+1],c.kind==='malformed-verdict'?'PASS: all good':JSON.stringify({state:c.kind==='observed-fail'?'FAIL':'PASS',checks}));
+  const checks=((c.kind.startsWith('triage')||c.kind.startsWith('acceptance'))?['historical-points','unknown-stat','current-player','search-back']:['scores','current-player','search-back']).map(id=>({id,state:(c.kind==='observed-fail'&&id==='scores'||(c.kind==='triage-replicated'||c.kind==='acceptance-seeded')&&id==='historical-points')?'FAIL':'PASS',detail:'Observed '+id+' on the device.',screenshot:id+'.png'}));
+  for(const check of checks) if(c.kind!=='missing-screenshot'&&c.kind!=='triage-missing-screenshot') copyFileSync(join(c.mediaDirectory,'screen.png'),join(process.env.AGENT_EVIDENCE_DIR,check.screenshot));
+  writeFileSync(args[args.indexOf('--output-last-message')+1],c.kind==='malformed-verdict'||c.kind==='triage-malformed-verdict'?'PASS: all good':JSON.stringify({state:c.kind==='observed-fail'||c.kind==='triage-replicated'||c.kind==='acceptance-seeded'?'FAIL':'PASS',checks}));
   if(c.kind==='exit-nonzero') process.exit(1);
   out({done:true});
 }
 `);
+  const issueInput = { id: 123, node_id: 'I_demo', number: 7, state: 'open', title: 'Jordan label', body: demoIssueMarker+' Original Jordan label issue.',
+    updated_at: '2026-10-28T00:00:00Z', html_url: 'https://github.com/trusted/lob-demo/issues/7', author_association: 'OWNER' } satisfies Parameters<typeof issueDigest>[0];
+  const receipt = acceptanceSchema.parse({ version: 1, repository: 'trusted/lob-demo', target: { ref: 'candidate', sha },
+    issue: { number: 7, id: 123, nodeId: 'I_demo', sha256: issueDigest(issueInput) },
+    criteriaSha256: digest(await readFile(join(cwd, 'demo/issues/player-label.md'))) });
+  const comments: { id: number; body: string; html_url: string; user: { id: number } }[] = [];
   const server = createServer((request, response) => {
     response.setHeader('Content-Type', 'application/json');
+    if (request.url === '/user') { response.end(JSON.stringify({ id: 42 })); return; }
+    if (request.url?.includes('/comments')) {
+      if (request.method === 'POST' || request.method === 'PATCH') {
+        let raw = ''; request.on('data', (bytes) => { raw += bytes; });
+        request.on('end', () => { const item = { id: 1, body: JSON.parse(raw).body, html_url: 'https://github.com/trusted/lob-demo/issues/7#issuecomment-1', user: { id: 42 } }; if (request.method === 'PATCH') comments[0] = item; else comments.push(item); response.end(JSON.stringify(item)); });
+      } else response.end(JSON.stringify(comments));
+      return;
+    }
+    if (request.url?.includes('/issues/')) {
+      const number = kind === 'triage-unknown-issue' ? 99 : 7;
+      response.end(JSON.stringify({ ...issueInput, number, body: issueInput.body + (kind === 'acceptance-issue-edited' ? ' changed' : '') })); return;
+    }
     const repository = { full_name: 'trusted/lob-demo', private: kind !== 'public-repo' };
     const payload = request.url?.includes('/branches/') ? { name: 'candidate', commit: { sha } }
-      : request.url?.includes('/pulls/') ? { state: 'open', draft: false, author_association: 'OWNER',
+      : request.url?.includes('/pulls/') ? { body: kind.startsWith('acceptance') ? acceptanceMarker(receipt) : '', state: 'open', draft: false, author_association: 'OWNER',
         head: { sha: kind === 'pr-head-mismatch' ? 'b'.repeat(40) : sha, ref: 'candidate', repo: kind === 'fork-pr' ? { ...repository, full_name: 'fork/lob-demo' } : repository },
         base: { sha: kind === 'target-without-baseline' ? 'b'.repeat(40) : sha, ref: 'candidate', repo: repository } }
       : repository;
@@ -104,7 +125,7 @@ if (tool === 'eas') {
   const executable = (tool: string) => ({ file: process.execPath, args: [fake, tool] });
   const options: CheckOptions = {
     cwd, outputRoot: join(root, 'output'), signal: new AbortController().signal,
-    env: { PATH: process.env.PATH, HOME: root, CODEX_AUTH_JSON: seed, EXPO_TOKEN: 'synthetic-expo-token',
+    env: { PATH: process.env.PATH, HOME: root, CODEX_AUTH_JSON: seed, EXPO_TOKEN: 'synthetic-expo-token', AGENT_AUTH_WRITE_TOKEN: 'synthetic-write-token',
       AGENT_TRUSTED_AUTOMATION: 'enabled', AGENT_TRUSTED_REPOSITORY: 'trusted/lob-demo', AGENT_GITHUB_READ_TOKEN: 'synthetic-read-token',
       AGENT_REPOSITORY: 'trusted/lob-demo', AGENT_SOURCE_REF: 'candidate', AGENT_SOURCE_SHA: sha,
       AGENT_WORKFLOW_BASELINE_SHA: sha, AGENT_BUILD_ID: installedBuild, AGENT_FINGERPRINT: 'a'.repeat(40) },
@@ -228,4 +249,65 @@ test('evidence admission rejects symlink escapes and stale files', async () => {
     await copyFile(join(mediaDirectory, 'screen.png'), join(directory, 'stale.png'));
     await assert.rejects(admitFile({ directory, name: 'stale.png', kind: 'png', startedAt: Date.now() + 5000 }));
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+for (const [kind, expected] of [
+  ['triage-replicated', 'REPLICATED'], ['triage-not-replicated', 'NOT_REPLICATED'],
+  ['triage-missing-screenshot', 'INCONCLUSIVE'], ['triage-malformed-verdict', 'INCONCLUSIVE'],
+  ['triage-unknown-issue', 'INCONCLUSIVE'],
+]) {
+  test(`${kind} uses actual admitted media and the independent issue contract`, async () => {
+    await scenario(kind, async ({ options, log }) => {
+      options.env.AGENT_TASK = 'triage';
+      options.env.AGENT_ISSUE_NUMBER = '7';
+      const result = await executeCheck(options);
+      assert.equal(result.state, expected);
+      if (kind === 'triage-unknown-issue') {
+        assert.equal(result.auth, 'not-loaded');
+        assert.equal(result.cleanup.state, 'not-needed');
+      } else {
+        assert.equal(result.target?.criteria.path, 'demo/issues/player-label.md');
+        assert.equal(result.target?.issue?.number, 7);
+        assert.equal(result.cleanup.state, 'stopped');
+      }
+      if (expected !== 'INCONCLUSIVE') {
+        options.env.AGENT_GITHUB_WRITE_TOKEN = 'synthetic-write-token';
+        await assert.rejects(publishTriage({ result, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase }), /cloud evidence link/);
+        const linked = { ...result, runUrl: 'https://expo.dev/accounts/demo/projects/lob/workflows/run-1' };
+        const published = await publishTriage({ result: linked, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
+        assert.equal(published.kind, 'created');
+        await rm(join(options.outputRoot, 'public', result.attemptId, 'publication.json'));
+        const reused = await publishTriage({ result: linked, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
+        assert.equal(reused.kind, 'reused');
+        await rm(join(options.outputRoot, 'public', result.attemptId, 'publication.json'));
+        const updated = await publishTriage({ result: { ...linked, runUrl: 'https://expo.dev/accounts/demo/projects/lob/workflows/run-2' }, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot, apiBase: options.githubApiBase });
+        assert.equal(updated.kind, 'updated');
+        assert.ok((await readFile(log, 'utf8')).includes('simulator:stop'));
+      }
+    });
+  });
+}
+
+for (const [kind, expected] of [['acceptance', 'PASS'], ['acceptance-seeded', 'FAIL'], ['acceptance-issue-edited', 'INCONCLUSIVE']]) {
+  test(`PR ${kind} selects frozen original criteria independently of ordinary baseline CI`, async () => {
+    await scenario(kind, async ({ options }) => {
+      options.env.AGENT_PR_NUMBER = '8';
+      const result = await executeCheck(options);
+      assert.equal(result.state, expected);
+      if (expected === 'INCONCLUSIVE') assert.equal(result.auth, 'not-loaded');
+      else {
+        assert.equal(result.target?.kind, 'acceptance');
+        assert.equal(result.target?.criteria.path, 'demo/issues/player-label.md');
+        assert.ok(result.state !== 'INCONCLUSIVE' && result.verdict.checks.some((check) => check.id === 'historical-points'));
+      }
+    });
+  });
+}
+
+test('manual acceptance requires original issue and criteria digests', async () => {
+  await scenario('acceptance', async ({ options }) => {
+    options.env.AGENT_TASK = 'acceptance'; options.env.AGENT_ISSUE_NUMBER = '7';
+    const result = await executeCheck(options);
+    assert.equal(result.state, 'INCONCLUSIVE'); assert.equal(result.auth, 'not-loaded');
+  });
 });

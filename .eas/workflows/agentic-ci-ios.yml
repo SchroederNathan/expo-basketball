@@ -15,6 +15,18 @@ name: Agentic CI iOS
         type: string
         required: true
         description: Exact candidate SHA, also required as workflow --ref
+      issue_number:
+        type: string
+        required: false
+        description: Optional frozen demo issue acceptance check
+      issue_digest:
+        type: string
+        required: false
+        description: Original issue input digest from Issue to PR
+      criteria_sha256:
+        type: string
+        required: false
+        description: Original acceptance criteria digest from Issue to PR
   pull_request:
     branches: [main, 'release/**']
     types: [opened, reopened, synchronize, ready_for_review]
@@ -42,6 +54,10 @@ jobs:
       AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
       AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
       AGENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      AGENT_TASK: ${{ inputs.issue_number && 'acceptance' || 'check' }}
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
+      AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
+      AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
     steps:
       - uses: eas/checkout
         with:
@@ -97,6 +113,10 @@ jobs:
       AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
       AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
       AGENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      AGENT_TASK: ${{ inputs.issue_number && 'acceptance' || 'check' }}
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
+      AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
+      AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
       AGENT_RUN_ID: ${{ workflow.id }}
       AGENT_RUN_URL: ${{ workflow.url }}
       AGENT_BUILD_ID: ${{ after.build.outputs.build_id || after.repack.outputs.build_id }}

@@ -39,7 +39,8 @@ The parent owns credential provisioning, cloud proof, and integration. No new re
 | Variable | Required value |
 | --- | --- |
 | `CODEX_AUTH_JSON` | Existing Secret EAS file variable in `preview`. Its value is an absolute path to managed ChatGPT `auth.json` with refresh tokens. Never pass the JSON itself. |
-| `EXPO_TOKEN` | Built-in Developer token in the EAS job. It must support simulator operations and updating the existing file variable. |
+| `EXPO_TOKEN` | Built-in Developer token in the EAS job for simulator operations. |
+| `AGENT_AUTH_WRITE_TOKEN` | Dedicated Secret Expo credential authorized to update the subscription Secret file. Built-in Developer and Release Manager job tokens failed that operation in real probes on this account. |
 | `AGENT_TRUSTED_AUTOMATION` | `enabled`. |
 | `AGENT_TRUSTED_REPOSITORY` | `SchroederNathan/expo-basketball`. |
 | `AGENT_WORKFLOW_BASELINE_SHA` | Audited integrated commit containing these QA files and the shared controller. The original pre-QA baseline is not sufficient after integration. |
@@ -55,7 +56,7 @@ The parent owns credential provisioning, cloud proof, and integration. No new re
 
 ## Run the parent concurrency probe
 
-The probe launches no devices and performs no app checks. It uses the same seed and persistence helpers as the swarm. It updates the existing EAS Secret file variable before model work and again after server shutdown. Run it only in the parent's authorized credential context, with `CODEX_AUTH_JSON` and `EXPO_TOKEN` already supplied securely. It never reads the developer's default Codex auth file.
+The probe launches no devices and performs no app checks. It uses the same seed and persistence helpers as the swarm. It updates the existing EAS Secret file variable before model work and again after server shutdown. Run it only in the parent's authorized credential context, with `CODEX_AUTH_JSON` and `AGENT_AUTH_WRITE_TOKEN` already supplied securely. It never reads the developer's default Codex auth file. After a cloud run may have refreshed credentials, run the probe in the same serialized EAS stream using the current Secret file rather than a stale local seed.
 
 Run from the linked project checkout with a new output path.
 

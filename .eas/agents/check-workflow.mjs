@@ -48,3 +48,43 @@ assert.notEqual(fingerprintConfig.fileHookTransform(source, one), fingerprintCon
 const normal = JSON.stringify(app);
 assert.equal(fingerprintConfig.fileHookTransform(source, normal), normal);
 process.stdout.write('Agentic iOS workflow graph, source guards, profile, evidence, and result checks passed.\n');
+
+for (const name of ['agentic-ci-ios', 'bug-triage', 'issue-to-pr']) {
+  const configuration = Bun.YAML.parse(await readFile(`.eas/workflows/${name}.yml`, 'utf8'));
+  assert.deepEqual(configuration.concurrency, { group: 'codex-subscription-agentic-ios', queue: 'max', cancel_in_progress: false });
+  assert.equal(configuration.permissions.account.role, 'developer');
+  assert.equal(configuration.defaults.tools.bun, '1.2.22');
+  for (const input of ['repository', 'target_ref', 'candidate_sha']) assert.equal(configuration.on.workflow_dispatch.inputs[input].required, true);
+  for (const job of Object.values(configuration.jobs)) {
+    for (const dependency of [...(job.needs ?? []), ...(job.after ?? [])]) assert.ok(configuration.jobs[dependency]);
+    assert.ok(!['submit', 'update'].includes(job.type));
+    for (const step of job.steps ?? []) {
+      if (step.uses === 'eas/checkout') {
+        assert.equal(step.with.fetch_depth, 0);
+        assert.equal(step.with.ref, undefined);
+      }
+    }
+  }
+  if (name === 'agentic-ci-ios') continue;
+  const { jobs } = configuration;
+  assert.equal(configuration.on.pull_request, undefined);
+  assert.equal(configuration.on.workflow_dispatch.inputs.issue_number.required, true);
+  assert.ok(jobs.preflight.outputs.issue_digest && jobs.preflight.outputs.criteria_sha256);
+  const operation = name === 'bug-triage' ? jobs.check : jobs.change;
+  assert.equal(operation.env.AGENT_ISSUE_DIGEST, '${{ needs.preflight.outputs.issue_digest }}');
+  assert.equal(operation.env.AGENT_CRITERIA_SHA256, '${{ needs.preflight.outputs.criteria_sha256 }}');
+  assert.equal(operation.steps.at(-1).if, '${{ always() }}');
+  assert.equal(operation.steps.at(-1).with.path, 'agent-output/public/**/*');
+  assert.ok(jobs.result.after.includes(name === 'bug-triage' ? 'check' : 'change'));
+  if (name === 'bug-triage') {
+    assert.equal(jobs.get_build.params.simulator, true);
+    assert.equal(jobs.repack.params.embed_bundle_assets, true);
+    assert.equal(jobs.build.params.profile, 'agent-preview');
+    assert.equal(jobs.repack.params.profile, 'agent-preview');
+    assert.deepEqual(jobs.check.after, ['build', 'repack']);
+    assert.ok(jobs.result.if.includes('REPLICATED') && jobs.result.if.includes('NOT_REPLICATED'));
+  } else {
+    assert.ok(jobs.result.if.includes('PR_READY') && jobs.result.if.includes('NO_CHANGE'));
+  }
+}
+process.stdout.write('All implemented workflows share the subscription queue and freeze issue inputs across jobs.\n');

@@ -90,10 +90,11 @@ export async function executeSwarm(options: SwarmOptions) {
     options.signal.throwIfAborted();
     if (!options.env.EXPO_TOKEN) throw new Error('The built-in Developer EXPO_TOKEN is required.');
     const installed = buildIdSchema.parse(options.env.AGENT_BUILD_ID);
-    target = targetSchema.parse({ kind: 'check', controller: prepared.request.source, source: prepared.request.source,
+    target = targetSchema.parse({ kind: 'check', issue: null, controller: prepared.request.source, source: prepared.request.source,
       repository: prepared.request.repository, pullRequest: prepared.request.pullRequest, platform: 'ios',
       appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview', fingerprint: options.env.AGENT_FINGERPRINT,
-      runtime: '1.0.0', fixture: prepared.demoFixture, criteria: prepared.criteria,
+      runtime: '1.0.0', fixture: prepared.demoFixture,
+      criteria: { path: '.eas/agents/check-ios.md', sha256: digest(await readFile(join(options.cwd, '.eas/agents/check-ios.md'))) },
       native: options.env.AGENT_NATIVE_SOURCE_BUILD_ID
         ? { kind: 'repacked', source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID),
           sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA), installed }
@@ -105,7 +106,7 @@ export async function executeSwarm(options: SwarmOptions) {
     authFile = seeded.file;
     secrets.push(...seeded.secrets);
     auth = 'write-back-failed';
-    await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: controllerEnv, timeoutMs: limits.authMs });
+    await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
     auth = 'persisted';
     options.signal.throwIfAborted();
     await mkdir(join(privateDirectory, 'home'));
@@ -204,7 +205,7 @@ export async function executeSwarm(options: SwarmOptions) {
       try {
         const refreshed = validateSubscription(JSON.parse(await readFile(authFile, 'utf8')));
         secrets.push(...Object.values(refreshed.tokens));
-        await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: controllerEnv, timeoutMs: limits.authMs });
+        await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
         auth = 'persisted';
       } catch { auth = 'write-back-failed'; }
     }
