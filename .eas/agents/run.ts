@@ -6,7 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { executeChange } from './change';
-import { publishTriage } from './github';
+import { finalizedEvidence, publicationStatus } from './evidence';
+import { publishEvidenceComment } from './evidence-publisher';
+import { evidencePhase } from './evidence-phase';
+import { prepareEvidenceWriter } from './evidence-tools';
 import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { admitFile, buildIdSchema, publishFile, resultSchema, sanitize, shaSchema, targetSchema, verdictSchema, issueVerdictSchema,
@@ -210,6 +213,9 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
 }
 
 async function main() {
+  const cancellation = new AbortController();
+  process.once('SIGINT', () => cancellation.abort());
+  process.once('SIGTERM', () => cancellation.abort());
   const operation = process.argv[2];
   if (operation === 'preflight') {
     const prepared = await preflight({ env: process.env, cwd: process.cwd() });
@@ -217,23 +223,21 @@ async function main() {
     await writeFile('agent-output/preflight.json', JSON.stringify({ task: prepared.task, issueDigest: prepared.issue?.identity.sha256 ?? '', criteriaSha256: prepared.criteria.sha256 }));
     subscriptionConfig(process.env);
     if (prepared.task === 'triage' || prepared.task === 'change') z.string().min(1).parse(process.env.AGENT_GITHUB_WRITE_TOKEN);
+    if (prepared.task !== 'change' && (prepared.task === 'triage' || prepared.request.pullRequest)) await prepareEvidenceWriter({ repository: prepared.request.repository, env: process.env, directory: resolve('agent-output/.evidence-tools'), phase: evidencePhase(cancellation.signal, 120_000) });
     process.stdout.write('Trusted source and subscription configuration preflight passed.\n');
     return;
   }
   if (!['check', 'triage', 'change'].includes(operation ?? '')) throw new Error('Usage: bun .eas/agents/run.ts <preflight|check|triage|change>');
-  const cancellation = new AbortController();
-  process.once('SIGINT', () => cancellation.abort());
-  process.once('SIGTERM', () => cancellation.abort());
-  const options = { cwd: process.cwd(), outputRoot: resolve('agent-output'), env: { ...process.env, ...(operation === 'triage' ? { AGENT_TASK: 'triage' } : {}) }, signal: cancellation.signal };
+  const options: CheckOptions = { cwd: process.cwd(), outputRoot: resolve('agent-output'), env: { ...process.env, ...(operation === 'triage' ? { AGENT_TASK: 'triage' } : {}) }, signal: cancellation.signal };
+  const writer = operation !== 'change' && (options.env.AGENT_TASK === 'triage' || options.env.AGENT_PR_NUMBER)
+    ? await prepareEvidenceWriter({ repository: z.string().parse(options.env.AGENT_REPOSITORY), env: options.env, directory: join(options.outputRoot, '.evidence-tools'), phase: evidencePhase(cancellation.signal, 120_000) }) : null;
   const result = operation === 'change' ? await executeChange(options) : await executeCheck(options);
-  let publicationFailed = false;
-  if (operation === 'triage' && 'target' in result) {
-    try { await publishTriage({ result, cwd: options.cwd, env: options.env, outputRoot: options.outputRoot }); }
-    catch { publicationFailed = true; process.stderr.write('Triage publication failed. Validated device results are retained.\n'); }
-  }
-  await writeFile('agent-output/status.json', JSON.stringify({ state: publicationFailed ? 'INCONCLUSIVE' : result.state, attemptId: result.attemptId }));
-  process.stdout.write(`${JSON.stringify({ state: publicationFailed ? 'INCONCLUSIVE' : result.state, attemptId: result.attemptId })}\n`);
-  process.exitCode = publicationFailed ? 2 : ['PASS', 'REPLICATED', 'NOT_REPLICATED', 'PR_READY', 'NO_CHANGE'].includes(result.state) ? 0 : result.state === 'FAIL' ? 1 : 2;
+  const status = 'jobKey' in result ? publicationStatus(result, await publishEvidenceComment({ observed: finalizedEvidence(result),
+    cwd: options.cwd, env: options.env, root: join(options.outputRoot, 'public', result.attemptId), writer, phase: evidencePhase(cancellation.signal) }))
+    : { state: result.state, attemptId: result.attemptId };
+  await writeFile('agent-output/status.json', JSON.stringify(status));
+  process.stdout.write(`${JSON.stringify(status)}\n`);
+  process.exitCode = ['PASS', 'REPLICATED', 'NOT_REPLICATED', 'PR_READY', 'NO_CHANGE'].includes(status.state) ? 0 : status.state === 'FAIL' ? 1 : 2;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

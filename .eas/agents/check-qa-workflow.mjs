@@ -18,6 +18,7 @@ assert.equal(jobs.swarm.env.AGENT_NATIVE_SOURCE_BUILD_ID, "${{ needs.get_build.o
 assert.equal(jobs.swarm.env.AGENT_NATIVE_SOURCE_SHA, "${{ needs.get_build.outputs.git_commit_hash || '' }}");
 assert.equal(jobs.swarm.steps.at(-1).if, '${{ always() }}');
 assert.equal(jobs.swarm.steps.at(-1).with.path, 'agent-output/qa/public/**/*');
+for (const key of ['observed_state', 'publication_state', 'publication_url']) assert.ok(jobs.swarm.outputs[key]);
 assert.equal(jobs.result.if, "${{ after.swarm.outputs.state != 'PASS' }}");
 assert.deepEqual(jobs.result.after, ['preflight', 'fingerprint', 'get_build', 'build', 'repack', 'swarm']);
 assert.equal(jobs.swarm.steps.filter((step) => step.run?.includes('bun .eas/agents/qa-swarm.ts run')).length, 1);

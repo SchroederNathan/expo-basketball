@@ -9,6 +9,7 @@ Read the other guides by purpose:
 - **Present the demo:** [PrizePicks 30-minute presentation](prizepicks-demo.md), including the verified runs and repeat-demo checklist.
 - **Set up and run workflows:** [Operator runbook](agentic-workflows.md), including source selection, credentials, commands, and recovery.
 - **Start from GitHub issues:** [Issue label bridge](agent-label-bridge.md), covering `agent-triage` and `agent`.
+- **Read embedded evidence:** [Rich PR and issue reports](rich-evidence.md), covering screenshots, playback, originals, and publication receipts.
 - **Understand concurrent testing:** [QA Swarm](qa-swarm.md), including lane ownership, tool preparation, and evidence checks.
 - **Review the proposed public guides:** [Expo docs feedback](research/agentic-workflows-docs-feedback.md).
 - **Understand the client context:** [PrizePicks release context](research/prizepicks-release-context.md) and [research index](research/README.md). The original research is a dated plan; use the runbooks for the implementation.

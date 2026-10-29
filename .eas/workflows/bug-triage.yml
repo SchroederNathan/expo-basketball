@@ -49,6 +49,12 @@ jobs:
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
+      - name: Install media evidence tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
       - id: freeze
         run: |
           bun .eas/agents/run.ts preflight
@@ -115,6 +121,9 @@ jobs:
     outputs:
       state: ${{ steps.check.outputs.state }}
       attempt_id: ${{ steps.check.outputs.attempt_id }}
+      observed_state: ${{ steps.check.outputs.observed_state }}
+      publication_state: ${{ steps.check.outputs.publication_state }}
+      publication_url: ${{ steps.check.outputs.publication_url }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -131,6 +140,9 @@ jobs:
           if [ -f agent-output/status.json ]; then
             set-output state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).state')"
             set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).attemptId')"
+            set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
+            set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_state || "unavailable"')"
+            set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_url || ""')"
           else
             set-output state INCONCLUSIVE
           fi

@@ -1,0 +1,50 @@
+{
+  "ci-pr4": {
+    "archiveSha256": "5e34adcf57ee5270fe9f2d1cad086b6e9752a1832a52642c0fad54da0b5e972a",
+    "archiveBytes": 15031613,
+    "resultSha256": "b7a8dba004e27444a5eb61fa366ca9dc3c411d292d6b6c498321933ebf1aa3f4",
+    "runId": "01a18906-6503-7785-8de9-f9d00384177e",
+    "attemptId": "df0540f0-fa8c-4a1b-be76-6088dc90fdd9",
+    "sourceSha": "705a42333c551953d62cf9c54156c2e17b2363bf",
+    "kind": "ci",
+    "state": "PASS",
+    "note": "Historical issue acceptance CI. Original contains duplicate PTS pairs. Edited playback does not establish elapsed task time. Visual audit scope is the retained PR4 final audit.",
+    "acceptanceMarkerSha256": "7ddbe226abcb137812f527f56eed250e9cf83a0d21b89f5ebd552833d9728a35"
+  },
+  "qa-pr4": {
+    "archiveSha256": "45ff92bae962e9ea1477c30cb07766276fb90f6f9944522854492b2a53ca7532",
+    "archiveBytes": 40406946,
+    "resultSha256": "acf1882c89b7e8bc0a32313e7e0d9ba438e59577ea911583b417d64bc14968d9",
+    "runId": "01a18906-9946-7962-b6db-962f825ffb27",
+    "attemptId": "606a104d-b44b-46f3-8bca-4d17c137e88e",
+    "sourceSha": "705a42333c551953d62cf9c54156c2e17b2363bf",
+    "kind": "qa",
+    "state": "PASS",
+    "note": "Historical generic QA, separate from issue repair acceptance. Search-back failed the strict original chronology audit: a backward PTS step of 1.667 ms at frame 259. Edited playback normalizes timing and does not repair that audit. Recording frames are not newly independently visually audited.",
+    "acceptanceMarkerSha256": "7ddbe226abcb137812f527f56eed250e9cf83a0d21b89f5ebd552833d9728a35"
+  },
+  "triage-original": {
+    "archiveSha256": "1bb1aa91939405bdf766a11243b96446f5dd1999626f404d16e49e809380ca95",
+    "archiveBytes": 14445190,
+    "resultSha256": "7a189b262e2b40013719ee6df6a7869c7a5f9eec927c6c5ecd869fc974a37656",
+    "runId": "01a18613-1186-705b-ae97-5f7f07f5dc8f",
+    "attemptId": "d57e32d6-678c-4c4e-a585-fcd4bcff9b69",
+    "sourceSha": "34b46867681fd283c9247e67be4bf54ae3db8611",
+    "kind": "triage",
+    "state": "REPLICATED",
+    "note": "Historical original defect reproduction. Original has a large backward PTS step at frame 13. Edited playback is not original chronology evidence.",
+    "acceptanceMarkerSha256": null
+  },
+  "triage-repaired": {
+    "archiveSha256": "901f027141f7387198de956dfb8908e888c91d19952ddef606c5e79758d771f4",
+    "archiveBytes": 15072142,
+    "resultSha256": "8907332783576180d2f6793a2f16caaf5f9f13a8d82c4c374159ba47a4613ff4",
+    "runId": "01a18629-2105-7ae5-a37f-09c800524396",
+    "attemptId": "5e31fcf4-53aa-4ea8-b563-b9ea0aff5ce0",
+    "sourceSha": "82c8a69490e0b4786f99d8cd70d86008cb0c12cd",
+    "kind": "triage",
+    "state": "NOT_REPLICATED",
+    "note": "Historical repaired candidate. Original has two small backward PTS steps. Edited playback is not timing evidence.",
+    "acceptanceMarkerSha256": null
+  }
+}

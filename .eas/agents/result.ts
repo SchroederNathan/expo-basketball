@@ -89,7 +89,7 @@ export const cleanupSchema = z.discriminatedUnion('state', [
   z.strictObject({ state: z.literal('unconfirmed'), sessionId: z.uuid().nullable(), expiresAt: z.iso.datetime() }),
 ]);
 export type Cleanup = z.infer<typeof cleanupSchema>;
-const fileSchema = z.strictObject({ path: z.string(), sha256: digestSchema, bytes: z.number().int().positive() });
+export const fileSchema = z.strictObject({ path: z.string(), sha256: digestSchema, bytes: z.number().int().positive() });
 export type FileRef = z.infer<typeof fileSchema>;
 const evidenceSchema = z.strictObject({
   identity: fileSchema,
@@ -114,7 +114,13 @@ export const resultSchema = z.discriminatedUnion('state', [
   z.strictObject({ ...recordFields, state: z.literal('INCONCLUSIVE'), reason: z.string(),
     agentObservation: deviceVerdictSchema.nullable(), evidence: z.array(fileSchema) }),
 ]).superRefine((result, ctx) => {
+  if (new Date(result.finishedAt).getTime() < new Date(result.startedAt).getTime()) ctx.addIssue({ code: 'custom', message: 'Invalid controller observation window.' });
   if (result.state !== 'INCONCLUSIVE') {
+    const expectedNames = ['controller-start.png', 'controller-end.png', ...result.verdict.checks.map((check) => check.screenshot)].sort();
+    const actualNames = result.evidence.screenshots.map((file) => file.path).sort();
+    if (JSON.stringify(expectedNames) !== JSON.stringify(actualNames) || result.evidence.identity.path !== 'identity.json' || result.evidence.recording.path !== 'session.mp4') {
+      ctx.addIssue({ code: 'custom', message: 'Definitive result requires the exact admitted controller and per-check evidence set.' });
+    }
     const jobKey = result.target.kind === 'check' ? 'check-ios' : result.target.kind === 'triage' ? 'triage-ios' : 'acceptance-ios';
     if (result.jobKey !== jobKey) ctx.addIssue({ code: 'custom', message: 'Job and task disagree.' });
     const schema = result.target.kind === 'check' ? verdictSchema : issueVerdictSchema;

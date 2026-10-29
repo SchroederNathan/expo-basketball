@@ -66,13 +66,14 @@ The operator owns credential provisioning and integration. The public repository
 | `AGENT_WORKFLOW_BASELINE_SHA` | Audited integrated commit containing these QA files and the shared controller. The original pre-QA baseline is not sufficient after integration. |
 | `AGENT_REPOSITORY` | `SchroederNathan/expo-basketball`. Supplied by the workflow input. |
 | `AGENT_SOURCE_REF`, `AGENT_SOURCE_SHA` | Branch and exact candidate SHA. The workflow must also be dispatched with that SHA as `--ref`. |
-| `AGENT_PR_NUMBER` | Optional same-repository trusted PR number. |
+| `AGENT_PR_NUMBER` | Optional same-repository trusted PR number. Supplying it enables per-attempt rich evidence comments and requires the writer below. Manual runs without it retain artifacts only. |
+| `AGENT_GITHUB_WRITE_TOKEN` | Required with a PR destination. Existing repository-scoped fine-grained writer with Contents, Issues, and Pull requests read/write. Never forwarded to Codex. |
 | `AGENT_BUILD_ID`, `AGENT_FINGERPRINT` | Installed candidate build ID and native fingerprint from the native graph. |
 | `AGENT_NATIVE_SOURCE_BUILD_ID`, `AGENT_NATIVE_SOURCE_SHA` | Both required for a repack, otherwise empty. |
 | `AGENT_RUN_ID`, `AGENT_RUN_URL` | EAS workflow metadata. |
 | `AGENT_GITHUB_READ_TOKEN` | Optional read credential for source verification. It is never forwarded to Codex. |
 
-`OPENAI_API_KEY`, `CODEX_API_KEY`, `OPENAI_BASE_URL`, and `CODEX_AUTH_TOKEN` are rejected by the shared subscription helper. The job needs Bun 1.2.22, EAS CLI 25.3.0, Codex 0.165.0, agent-device 0.21.33, FFmpeg, and FFprobe. The workflow installs the media tools when absent.
+`OPENAI_API_KEY`, `CODEX_API_KEY`, `OPENAI_BASE_URL`, and `CODEX_AUTH_TOKEN` are rejected by the shared subscription helper. The job needs Bun 1.2.22, EAS CLI 25.3.0, Codex 0.165.0, agent-device 0.21.33, FFmpeg, and FFprobe. The workflow installs the media tools when absent. PR-targeted runs prepare checksum-pinned gh 2.103.1 and verify writer/media readiness before lanes start. Retain `publication-{manifest,intent,invocation,receipt}-*.json` with the artifacts for exact per-attempt reconciliation.
 
 ## Prepare tools before the lanes
 
@@ -179,3 +180,5 @@ Pinned source shows the config path. `thread_start_task` calls `load_with_overri
 The source also shows one `AuthManager` passed into `ThreadManager`, cloned into thread spawns, with a shared refresh semaphore. That supports the single-process design. Cloud runs establish authenticated overlapping turns and persisted writeback. They do not establish that token rotation or simultaneous refresh occurred. [Message processor](https://github.com/openai/codex/blob/rust-v0.165.0/codex-rs/app-server/src/message_processor.rs#L344), [thread manager](https://github.com/openai/codex/blob/rust-v0.165.0/codex-rs/core/src/thread_manager.rs#L1385), [auth manager](https://github.com/openai/codex/blob/rust-v0.165.0/codex-rs/login/src/auth/manager.rs#L2137).
 
 The [historical Linux subscription probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) passed 16 protocol and process cleanup checks before its authenticated thread test. The full QA runs separately establish session capacity, installed candidate identity, remote journeys, media decode, cleanup, and persistence for this account and configuration. They do not prove a live cancellation recovery, universal model entitlement, a 30-minute completion guarantee, hostile-process containment, OTA activation, or production rollout safety.
+
+A supplied `pr_number` requires the [shared evidence publisher](rich-evidence.md) after all lane and server finalizers. Each lane keeps its own screenshots, recording, attempt, and session identity. Manual QA without a PR retains artifacts only.

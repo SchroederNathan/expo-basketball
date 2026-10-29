@@ -15,6 +15,10 @@ name: Agentic CI iOS
         type: string
         required: true
         description: Exact candidate SHA, also required as workflow --ref
+      pr_number:
+        type: string
+        required: false
+        description: Optional trusted same-repository PR destination
       issue_number:
         type: string
         required: false
@@ -53,7 +57,7 @@ jobs:
       AGENT_REPOSITORY: ${{ github.repository || inputs.repository }}
       AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
       AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
-      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
       AGENT_TASK: ${{ inputs.issue_number && 'acceptance' || 'check' }}
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
@@ -61,6 +65,12 @@ jobs:
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
+      - name: Install media evidence tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
       - run: bun .eas/agents/run.ts preflight
 
   fingerprint:
@@ -110,7 +120,7 @@ jobs:
       AGENT_REPOSITORY: ${{ github.repository || inputs.repository }}
       AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
       AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
-      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
       AGENT_TASK: ${{ inputs.issue_number && 'acceptance' || 'check' }}
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
@@ -124,6 +134,9 @@ jobs:
     outputs:
       state: ${{ steps.check.outputs.state }}
       attempt_id: ${{ steps.check.outputs.attempt_id }}
+      observed_state: ${{ steps.check.outputs.observed_state }}
+      publication_state: ${{ steps.check.outputs.publication_state }}
+      publication_url: ${{ steps.check.outputs.publication_url }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -140,6 +153,9 @@ jobs:
           if [ -f agent-output/status.json ]; then
             set-output state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).state')"
             set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).attemptId')"
+            set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
+            set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_state || "unavailable"')"
+            set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_url || ""')"
           else
             set-output state INCONCLUSIVE
           fi
@@ -162,6 +178,10 @@ jobs:
         Verdict **${{ after.check.outputs.state || 'INCONCLUSIVE' }}**.
 
         [Open the workflow and evidence artifacts](${{ workflow.url }}).
+
+        Observed device verdict **${{ after.check.outputs.observed_state || 'INCONCLUSIVE' }}**.
+        Rich publication **${{ after.check.outputs.publication_state || 'unavailable' }}**.
+        [Embedded screenshots, playback, and originals](${{ after.check.outputs.publication_url || workflow.url }}).
 
         Candidate `${{ github.event.pull_request.head.sha }}`.
         Attempt `${{ after.check.outputs.attempt_id || 'unavailable' }}`.

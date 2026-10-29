@@ -25,8 +25,8 @@ Set these project environment variables in the preview environment before the fi
 | `AGENT_WORKFLOW_BASELINE_SHA` | Full reviewed implementation SHA, plaintext. |
 | `CODEX_AUTH_JSON` | Secret **file** variable containing managed ChatGPT `auth.json`. Never a JSON string variable or an API key. |
 | `AGENT_AUTH_WRITE_TOKEN` | Secret Expo token authorized to update this project's preview environment variables. Used only by the controller's subscription-file persistence command. |
-| `AGENT_GITHUB_WRITE_TOKEN` | Required for triage and Issue to PR, secret. A repository-scoped fine-grained personal access token with Contents, Issues, and Pull requests read/write, plus default Metadata read. No Actions, Workflows, administration, organization, store, or production permissions. The operator provisions it. |
-| `AGENT_GITHUB_READ_TOKEN` | Optional repository-scoped read token, secret. Public GitHub source checks work without it but can encounter anonymous rate limits. Ordinary Agentic CI needs no GitHub write token. |
+| `AGENT_GITHUB_WRITE_TOKEN` | Required for triage, Issue to PR, and PR-targeted CI/QA, secret. A repository-scoped fine-grained personal access token with Contents, Issues, and Pull requests read/write, plus default Metadata read. No Actions, Workflows, administration, organization, store, or production permissions. The operator provisions it. |
+| `AGENT_GITHUB_READ_TOKEN` | Optional repository-scoped read token, secret. Public GitHub source checks work without it but can encounter anonymous rate limits. Manual CI/QA without a PR destination is artifact-only and needs no GitHub write token. |
 
 The built-in Developer `EXPO_TOKEN` starts and stops simulators on this account. No separate simulator token is required. Actual cloud probes rejected file-secret updates with both the built-in Developer and Release Manager job tokens. Subscription persistence therefore requires `AGENT_AUTH_WRITE_TOKEN`. Its write permission must succeed before Codex or a simulator starts. Native build, warm repack, subscription-authenticated baseline acceptance, and remote media export have completed. The persistence receipt does not establish that token rotation occurred.
 Do not put unrelated production credentials in this environment.
@@ -107,7 +107,7 @@ bun run eas simulator:stop --id "$SESSION_ID" --json --non-interactive
 ```
 
 If the ID was not returned, use the attempt tag `lob-<attempt UUID>` with `simulator:list`, verify its exact name/tag, and stop that ID. An expiry estimate is not confirmed cleanup.
-The workflow's final job fails unless the controller returns the exact state PASS. Ordinary Agentic CI makes no GitHub writes. The two issue controllers below publish only after validating their results. These workflows never merge, release, submit to a store, or publish an update.
+The workflow's final job fails unless the controller returns the exact state PASS. PR-targeted CI and QA publish per-attempt evidence comments after validating their results. Manual CI/QA without a PR destination retains artifacts only. Triage publishes issue evidence; Issue to PR publishes its coding result. These workflows never merge, release, submit to a store, or publish an update.
 
 
 ## Prepare a trusted synthetic issue
@@ -124,7 +124,7 @@ The marker is a supported-demo-issue check, not an authorization grant. Only tru
 The controller snapshots GitHub's numeric and node identity, title, body, author association, URL, and timestamp. It hashes the semantic input separately from the timestamp, since comments change `updated_at`. It also copies the exact original criteria and records their SHA-256. Later jobs require the same issue-content and criteria digests.
 
 The GitHub publisher initially supports a fine-grained PAT. It calls `GET /user` to establish comment ownership. A GitHub App installation token is not established by this implementation. [GitHub's comment API](https://docs.github.com/en/rest/issues/comments) and [PR API](https://docs.github.com/en/rest/pulls/pulls) define the repository permissions used here.
-The controller supplies this token only to its HTTP and Git subprocesses. The Codex child receives neither it, the read token, nor EXPO_TOKEN. Coding tests also receive no such tokens. The EAS worker remains a trusted-code environment, not a hostile-code isolation boundary. Preview secrets may be accessible to trusted worker code. Do not add production secrets there.
+The controller supplies this token only to its HTTP client, pinned native gh attachment command, and coding Git subprocesses. The Codex child receives neither it, the read token, nor EXPO_TOKEN. Coding tests also receive no such tokens. The EAS worker remains a trusted-code environment, not a hostile-code isolation boundary. Preview secrets may be accessible to trusted worker code. Do not add production secrets there.
 
 ## Triage the selected baseline artifact
 
@@ -145,8 +145,8 @@ The four issue checks are `historical-points`, `unknown-stat`, `current-player`,
 REPLICATED requires an observed original-criteria failure, successful Codex termination, distinct admitted PNGs, a decodable owned-session recording, independently observed identity, persisted subscription auth, and confirmed scoped stop. NOT_REPLICATED requires all original checks to pass with that same evidence. The conclusion applies only to the recorded source, fixture, and installed artifact. Source inspection is never reproduction evidence.
 Missing verdicts or evidence, uncertain UI, mismatched identity, and cleanup or persistence failures remain INCONCLUSIVE. An incomplete attempt can receive an explicitly inconclusive issue comment when its target/input identity is known. The workflow still fails.
 
-After result validation and an unchanged-input check, the controller upserts one issue comment using an issue-and-target marker. It verifies the existing comment belongs to the token owner, rejects duplicate or foreign markers, and links the workflow artifacts and owned session. Screenshot, recording, identity, source, build, fixture, criteria, and issue digests identify the evidence. It never closes or labels the issue.
-A publication failure preserves the device `result.json`, fails the workflow status, and leaves the GitHub update unverified. `publication.json` records a successful comment receipt.
+After result validation, the controller creates or reconciles a per-attempt issue evidence comment. It rechecks the live issue input before each create or status update, verifies author and exact content, rejects duplicate or foreign markers, and links the workflow and owned session. Screenshot, recording, identity, source, build, fixture, criteria, and issue digests identify the evidence. It never closes or labels the issue.
+A publication failure preserves the device `result.json`, fails the workflow status, and leaves the GitHub update unverified. `publication-{manifest,intent,invocation,receipt}-*.json` retain delivery state and native-write reconciliation. Preserve them for retries. The separate Issue to PR coding controller still uses `publication.json`.
 
 ## Turn the issue into one reviewable PR
 
@@ -200,3 +200,5 @@ Manual issue acceptance requires both digests. It cannot silently derive a new a
 Run `bun run check` and `bun run check:agentic`, then validate each changed workflow with EAS CLI 25.3.0. Controller tests use synthetic auth, real temporary Git repositories, local HTTP GitHub fixtures, fake unavailable agent/cloud executables, and real decodable media. They make no real GitHub writes or cloud runs.
 
 All four workflows now have cloud evidence. Historical label events dispatched triage and coding from `release/prizepicks-demo`. Coding waited while triage owned the shared subscription stream. Final-head CI passed the four original issue checks, and QA passed all three generic journeys. Follow [the QA runbook](qa-swarm.md) for prepared-tool installation, the Linux probe, and swarm dispatch. See [the presentation evidence](prizepicks-demo.md#current-evidence) for final and historical revisions, media limitations, and the intentionally open PR.
+
+Device checks now publish inline screenshots, edited playback, and unchanged original downloads through the [shared evidence publisher](rich-evidence.md). PR-targeted success also requires complete delivery. The original device result and acceptance receipt remain separate from publication status.
