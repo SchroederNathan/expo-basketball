@@ -10,7 +10,7 @@ import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { laneIds, lanePrompt, laneVerdictSchema, type LaneId, type LaneVerdict } from './qa-lanes';
 import { admitFile, buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema,
-  type Cleanup, type FileRef, type Session, type Target } from './result';
+  type Cleanup, type FileRef, type Session, type Target, type Termination } from './result';
 import { identityLabel, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
 const tools: Record<'eas' | 'codex' | 'device' | 'ffprobe' | 'ffmpeg', Command> = {
@@ -21,10 +21,13 @@ const deadlines = { startupMs: 240_000, agentMs: 900_000, cleanupMs: 120_000,
   deviceMs: 120_000, authMs: 60_000, requestMs: 60_000, stopMs: 10_000 };
 export type SwarmOptions = { cwd: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal;
   executables?: typeof tools; limits?: typeof deadlines & { mediaMs?: number }; githubApiBase?: string };
+type DeviceFailure = { operation: string; termination: Termination; error: { code: string; message: string } | null };
 type Lane = { id: LaneId; attemptId: string; directory: string; evidenceDirectory: string; publicDirectory: string;
   simulator: Simulator; env: NodeJS.ProcessEnv | null; session: Session | null; threadId: string | null;
   turn: TurnReceipt | null; verdict: LaneVerdict | null; identity: FileRef | null; recording: FileRef | null;
-  screenshots: FileRef[]; recordingAttempted: boolean; cleanup: Cleanup; problem: string | null };
+  screenshots: FileRef[]; recordingAttempted: boolean; cleanup: Cleanup; problem: string | null;
+  deviceFailure: DeviceFailure | null };
+const deviceErrorSchema = z.object({ error: z.object({ code: z.string().max(100), message: z.string().max(2000) }) });
 
 export async function qaPreflight(options: Pick<SwarmOptions, 'env' | 'cwd' | 'githubApiBase'>) {
   const prepared = await preflight({ env: options.env, cwd: options.cwd, apiBase: options.githubApiBase });
@@ -80,7 +83,17 @@ export async function executeSwarm(options: SwarmOptions) {
     const result = await command({ executable: executables.device, cwd: lane.directory, env: lane.env,
       timeoutMs: limits.deviceMs, signal: cleanup ? undefined : options.signal,
       args: [...args, '--platform', 'ios', '--session', lane.attemptId, '--json'] });
-    if (!succeeded(result)) throw new Error('Lane device command did not complete.');
+    if (!succeeded(result)) {
+      const operation = args[0] === 'record' ? `record ${args[1]}` : args[0]!;
+      let error: DeviceFailure['error'] = null;
+      try {
+        const parsed = deviceErrorSchema.safeParse(JSON.parse(result.stdout));
+        if (parsed.success) error = { code: sanitize(parsed.data.error.code, secrets), message: sanitize(parsed.data.error.message, secrets) };
+      } catch {}
+      lane.deviceFailure ??= { operation, termination: result.termination, error };
+      lane.problem ??= `Device ${operation} did not complete.`;
+      throw new Error('Lane device command did not complete.');
+    }
     return result.stdout;
   };
   const media = async (lane: Lane, name: string, kind: 'png' | 'mp4') => {
@@ -132,7 +145,7 @@ export async function executeSwarm(options: SwarmOptions) {
         simulator: new Simulator({ attemptId: laneAttempt, cwd: directory, env: controllerEnv, eas: executables.eas,
           startupMs: limits.startupMs, cleanupMs: limits.cleanupMs }),
         env: null, session: null, threadId: null, turn: null, verdict: null, identity: null,
-        recording: null, screenshots: [], recordingAttempted: false, cleanup: { state: 'not-needed' }, problem: null });
+        recording: null, screenshots: [], recordingAttempted: false, cleanup: { state: 'not-needed' }, problem: null, deviceFailure: null });
     }
     await Promise.allSettled(lanes.map(async (lane) => {
       try {
@@ -156,7 +169,7 @@ export async function executeSwarm(options: SwarmOptions) {
         if (!snapshot.includes(identityLabel(candidate))) throw new Error('Installed embedded identity was not observed.');
         await device(lane, ['screenshot', join(lane.evidenceDirectory, 'controller-start.png')]);
         lane.screenshots.push(await media(lane, 'controller-start.png', 'png'));
-      } catch { lane.problem = 'Installed embedded identity verification or lane recording startup failed.'; }
+      } catch { lane.problem ??= 'Installed embedded identity verification or lane recording startup failed.'; }
     }));
     await Promise.allSettled(lanes.map(async (lane) => {
       if (lane.problem || !lane.env) return;
@@ -186,7 +199,7 @@ export async function executeSwarm(options: SwarmOptions) {
           observed: identityLabel(candidate), sessionId: lane.session!.id, attemptId: lane.attemptId,
           threadId: lane.threadId, turn: lane.turn, promptSha256: digest(prompt), observedAt: Date.now(),
         }, null, 2) });
-      } catch { lane.problem = 'Lane turn, strict verdict, device identity, or evidence validation failed.'; }
+      } catch { lane.problem ??= 'Lane turn, strict verdict, device identity, or evidence validation failed.'; }
     }));
   } catch { problem = 'QA setup or identity verification did not complete.'; }
   finally {
@@ -227,7 +240,8 @@ export async function executeSwarm(options: SwarmOptions) {
       verdict: lane?.verdict ? { ...lane.verdict, detail: sanitize(lane.verdict.detail, secrets) } : null,
       identity: lane?.identity ?? null, screenshots: lane?.screenshots ?? [], recording: lane?.recording ?? null,
       recordingSessionId: lane?.recording ? lane.session?.id ?? null : null,
-      cleanup: lane?.cleanup ?? { state: 'not-needed' }, reason: lane?.problem ?? (complete ? null : 'Lane evidence is incomplete.') };
+      cleanup: lane?.cleanup ?? { state: 'not-needed' }, deviceFailure: lane?.deviceFailure ?? null,
+      reason: lane?.problem ?? (complete ? null : 'Lane evidence is incomplete.') };
   });
   const definitive = !problem && target && auth === 'persisted' && serverStop?.state === 'stopped' && serverStop.healthy && !serverStop.forced && concurrent &&
     records.every((lane) => lane.state !== 'INCONCLUSIVE') && new Set(records.map((lane) => lane.session?.id)).size === 3;

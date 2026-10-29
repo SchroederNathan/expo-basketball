@@ -166,6 +166,30 @@ for (const mode of ['malformed', 'failed-turn', 'wrong-lane', 'missing-turn', 'm
   });
 }
 
+for (const mode of ['device-open-failed-json', 'device-open-failed-text']) {
+  test(`${mode} retains the failed operation and safe diagnostics through cleanup`, { timeout: 15_000 }, async () => {
+    await scenario(mode, async ({ options, events }) => {
+      const result = await executeSwarm(options);
+      assert.equal(result.state, 'INCONCLUSIVE');
+      const lane = result.lanes.find((lane) => lane.id === 'scores');
+      assert.ok(lane);
+      assert.equal(lane.reason, 'Device open did not complete.');
+      assert.equal(lane.deviceFailure?.operation, 'open');
+      assert.deepEqual(lane.deviceFailure?.termination, { kind: 'exited', code: 9 });
+      if (mode.endsWith('json')) {
+        assert.equal(lane.deviceFailure?.error?.code, 'REMOTE_UNAVAILABLE');
+        assert.ok(lane.deviceFailure?.error?.message.includes('[redacted]'));
+        assert.ok(!JSON.stringify(lane.deviceFailure).includes('synthetic-device-token'));
+        assert.ok(!JSON.stringify(lane.deviceFailure).includes('?token='));
+      } else assert.equal(lane.deviceFailure?.error, null);
+      assert.equal(lane.threadId, null);
+      assert.equal(result.auth, 'persisted');
+      assert.ok(result.lanes.every((lane) => lane.cleanup.state === 'stopped'));
+      assert.equal((await events()).filter((event) => event.args?.[0] === 'simulator:stop').length, 3);
+    });
+  });
+}
+
 for (const mode of ['auth-preflight-failed', 'wrong-build']) {
   test(`${mode} prevents sessions and model turns`, { timeout: 15_000 }, async () => {
     await scenario(mode, async ({ options, events }) => {

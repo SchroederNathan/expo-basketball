@@ -143,6 +143,12 @@ if (tool === 'server') {
   log({ tool, args, lane, remote: process.env.AGENT_DEVICE_DAEMON_BASE_URL, token: process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN });
   if (process.env.AGENT_DEVICE_DAEMON_BASE_URL !== `https://${lane}.example.invalid` ||
     process.env.AGENT_DEVICE_DAEMON_AUTH_TOKEN !== `synthetic-device-token-${lane}`) process.exit(4);
+  if (c.mode.startsWith('device-open-failed') && affected && args[0] === 'open') {
+    if (c.mode === 'device-open-failed-json') out({ ok: false, error: { code: 'REMOTE_UNAVAILABLE',
+      message: `Connection failed with synthetic-device-token-${lane} at https://example.invalid/device?token=private` } });
+    else process.stdout.write('Tool resolution failed.');
+    process.exit(9);
+  }
   if (args[0] === 'wait') {
     if (JSON.parse(args[1].slice('label='.length)) !== identity) process.exit(5);
   } else if (args[0] === 'record' && args[1] === 'start') {
