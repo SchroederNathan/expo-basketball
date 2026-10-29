@@ -1,0 +1,56 @@
+name: Agent issue bridge
+
+'on':
+  issues:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Open trusted player-label demo issue number
+        required: true
+        type: string
+      target_ref:
+        description: Explicit target branch, or blank for AGENT_DEMO_TARGET_REF then release/prizepicks-demo
+        required: false
+        type: string
+      operation:
+        description: EAS workflow to dispatch
+        required: true
+        type: choice
+        default: issue-to-pr
+        options: [issue-to-pr, bug-triage]
+
+permissions:
+  contents: read
+  issues: read
+
+jobs:
+  dispatch:
+    if: >-
+      github.repository == 'SchroederNathan/expo-basketball' &&
+      github.event.repository.fork == false &&
+      github.ref == format('refs/heads/{0}', github.event.repository.default_branch) &&
+      !github.event.pull_request && !github.event.issue.pull_request &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'issues' && github.event.action == 'labeled' &&
+        (github.event.label.name == 'agent' || github.event.label.name == 'agent-triage')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: SchroederNathan/expo-basketball
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: 1.2.22
+      - name: Install trusted controller dependencies
+        run: bun install --frozen-lockfile
+      - name: Validate issue and dispatch exact source
+        run: bun scripts/agent-label.mjs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AGENT_DEMO_TARGET_REF: ${{ vars.AGENT_DEMO_TARGET_REF }}
+          EXPO_AGENT_TOKEN: ${{ secrets.EXPO_AGENT_TOKEN }}
