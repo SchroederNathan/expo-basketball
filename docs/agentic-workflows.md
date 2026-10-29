@@ -1,5 +1,7 @@
 # Run the Lob agent workflows
 
+For a plain-language rundown, start with [How the agentic workflows work](agentic-workflows-overview.md). Browse all guides in the [documentation index](README.md).
+
 Agentic CI, Bug triage, Issue to PR, and QA Swarm have real cloud evidence for the PrizePicks demonstration. The [issue label bridge](agent-label-bridge.md) starts triage or coding on the explicit release branch. Use the [presentation guide](prizepicks-demo.md#current-evidence) for the evidence links and their exact revisions.
 
 At PR 4 head `705a42333c551953d62cf9c54156c2e17b2363bf`, [automatic issue acceptance CI](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18906-6503-7785-8de9-f9d00384177e) and [manual three-lane QA](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18906-9946-7962-b6db-962f825ffb27) passed. The October 29 audit recorded all 15 PR checks green, four independently confirmed STOPPED sessions, persisted auth, and healthy QA server shutdown. All 15 PNGs and 3,460 recording frames decoded. The QA search-back recording has a 1.667 ms backward timestamp jump at zero-based frame 259, so the stricter chronology audit failed. Cloud PASS does not establish clean recording timing.
