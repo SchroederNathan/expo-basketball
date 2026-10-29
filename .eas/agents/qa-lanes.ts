@@ -16,10 +16,12 @@ export const laneCriteria: Record<LaneId, string> = {
   'search-back': 'Go to Search and search Jordan. Open Jordan Vale and verify his name and game log. Return with Back. Verify the Jordan query and Jordan Vale remain in the results. Capture search-back.png on those results and return to Scores. Historical and unknown stat labels seed a separate bug exercise. Do not assert they are fixed.',
 };
 
-export function lanePrompt(lane: LaneId, session: string, identity: string) {
+export function lanePrompt(lane: LaneId, session: string, identity: string, deviceExecutable: string) {
+  const executable = `'${deviceExecutable.replaceAll("'", "'\\''")}'`;
   return `Check the installed Lob app on your owned remote iOS session. It is already open and recording.
-Use only bunx agent-device@0.21.33 <command> --platform ios --session ${session}.
-Read bunx agent-device@0.21.33 help workflow if syntax is unclear. Use fresh snapshot refs for taps, never guessed coordinates.
+Use only ${executable} <command> --platform ios --session ${session}.
+Read ${executable} help workflow if syntax is unclear. Use fresh snapshot refs for taps, never guessed coordinates.
+The executable is already prepared. Do not install or update packages or use bunx, npx, or package-manager run commands.
 The shell environment already carries this lane's remote connection. Do not print or inspect connection variables or credentials.
 Control only this device. Do not start or stop sessions or recordings, edit code, use GitHub, publish updates, or spawn agents.
 Save your screenshot under AGENT_EVIDENCE_DIR. Never manufacture or copy evidence.

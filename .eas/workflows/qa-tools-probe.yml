@@ -1,0 +1,56 @@
+name: QA tools cold Linux verification
+
+'on':
+  workflow_dispatch:
+    inputs:
+      repository:
+        type: string
+        required: true
+        description: Trusted owner/repository
+      target_ref:
+        type: string
+        required: true
+        description: Branch containing the audited workflow baseline
+      candidate_sha:
+        type: string
+        required: true
+        description: Exact candidate SHA, also required as workflow --ref
+
+permissions:
+  account:
+    role: developer
+
+concurrency:
+  group: codex-subscription-agentic-ios
+  queue: max
+  cancel_in_progress: false
+
+defaults:
+  tools:
+    bun: 1.2.22
+
+jobs:
+  probe:
+    name: Verify cold tools and concurrent direct launches
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Prepare and probe without credentials or devices
+        run: |
+          rm -f agent-output/qa-tools/public/result.json
+          bun .eas/agents/qa-tools-probe.ts
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: qa-tools-cold-linux-proof
+          path: agent-output/qa-tools/public/**/*
+      - name: Require a verified PASS
+        if: ${{ always() }}
+        run: |
+          node -e 'const r = require("./agent-output/qa-tools/public/result.json"); if (r.status !== "PASS" || r.platform !== "linux" || r.outcomes.length !== 8 || r.outcomes.some(p => p.passed !== true)) process.exit(1)'

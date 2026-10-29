@@ -1,30 +1,33 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
-import { CodexServer, codexCommand, codexModel, concurrentReceipts, type TurnReceipt } from './codex-server';
+import { CodexServer, codexModel, concurrentReceipts, type TurnReceipt } from './codex-server';
 import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
+import { prepareQaTools, qaToolPins, QaToolPreparationError, type PreparedQaTools, type QaToolCommands } from './qa-tools';
 import { laneIds, lanePrompt, laneVerdictSchema, type LaneId, type LaneVerdict } from './qa-lanes';
 import { admitFile, buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema,
-  type Cleanup, type FileRef, type Session, type Target } from './result';
+  type Cleanup, type FileRef, type Session, type Target, type Termination } from './result';
 import { identityLabel, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
-const tools: Record<'eas' | 'codex' | 'device' | 'ffprobe' | 'ffmpeg', Command> = {
-  eas: { file: 'bunx', args: ['eas-cli@25.3.0'] }, codex: codexCommand,
-  device: { file: 'bunx', args: ['agent-device@0.21.33'] }, ffprobe: { file: 'ffprobe', args: [] },
+const mediaTools: Record<'ffprobe' | 'ffmpeg', Command> = { ffprobe: { file: 'ffprobe', args: [] },
   ffmpeg: { file: 'ffmpeg', args: [] } };
 const deadlines = { startupMs: 240_000, agentMs: 900_000, cleanupMs: 120_000,
   deviceMs: 120_000, authMs: 60_000, requestMs: 60_000, stopMs: 10_000 };
 export type SwarmOptions = { cwd: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal;
-  executables?: typeof tools; limits?: typeof deadlines & { mediaMs?: number }; githubApiBase?: string };
+  executables?: QaToolCommands & typeof mediaTools; limits?: typeof deadlines & { mediaMs?: number; toolingMs?: number }; githubApiBase?: string };
+type DeviceFailure = { operation: string; termination: Termination; error: { code: string; message: string } | null;
+  stdout: string; stderr: string };
 type Lane = { id: LaneId; attemptId: string; directory: string; evidenceDirectory: string; publicDirectory: string;
   simulator: Simulator; env: NodeJS.ProcessEnv | null; session: Session | null; threadId: string | null;
   turn: TurnReceipt | null; verdict: LaneVerdict | null; identity: FileRef | null; recording: FileRef | null;
-  screenshots: FileRef[]; recordingAttempted: boolean; cleanup: Cleanup; problem: string | null };
+  screenshots: FileRef[]; recordingAttempted: boolean; cleanup: Cleanup; problem: string | null;
+  deviceFailure: DeviceFailure | null };
+const deviceErrorSchema = z.object({ error: z.object({ code: z.string().max(100), message: z.string().max(2000) }) });
 
 export async function qaPreflight(options: Pick<SwarmOptions, 'env' | 'cwd' | 'githubApiBase'>) {
   const prepared = await preflight({ env: options.env, cwd: options.cwd, apiBase: options.githubApiBase });
@@ -40,7 +43,7 @@ export async function qaPreflight(options: Pick<SwarmOptions, 'env' | 'cwd' | 'g
 }
 
 async function decodeMedia(file: string, kind: 'png' | 'mp4', options: SwarmOptions, cwd: string) {
-  const executables = options.executables ?? tools;
+  const executables = options.executables ?? mediaTools;
   const env = safeEnvironment(options.env);
   const deadline = Date.now() + (options.limits?.mediaMs ?? 30_000);
   const probe = await command({ executable: executables.ffprobe, cwd, env, timeoutMs: Math.max(1, deadline - Date.now()),
@@ -63,9 +66,11 @@ export async function executeSwarm(options: SwarmOptions) {
   const publicDirectory = join(options.outputRoot, 'public', attemptId);
   await mkdir(publicDirectory, { recursive: true, mode: 0o700 });
   const privateDirectory = await mkdtemp(join(tmpdir(), 'lob-qa-'));
-  const executables = options.executables ?? tools;
+  let preparedTools: PreparedQaTools | null = null;
+  let preparation: Pick<QaToolPreparationError, 'stage' | 'tool' | 'reason'> | null = null;
+  let preparationDiagnostics: QaToolPreparationError['diagnostics'] = null;
   const limits = options.limits ?? deadlines;
-  const controllerEnv = { ...safeEnvironment(options.env), EXPO_TOKEN: options.env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
+  const controllerEnv: NodeJS.ProcessEnv = { ...safeEnvironment(options.env), EXPO_TOKEN: options.env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
   const secrets = Object.entries(options.env).filter(([key]) => /TOKEN|SECRET|KEY|AUTH/.test(key)).map(([, value]) => value ?? '');
   secrets.push(privateDirectory);
   let target: Target | null = null;
@@ -76,11 +81,22 @@ export async function executeSwarm(options: SwarmOptions) {
   let problem: string | null = null;
   const lanes: Lane[] = [];
   const device = async (lane: Lane, args: string[], cleanup = false) => {
-    if (!lane.env) throw new Error('Lane device is unavailable.');
-    const result = await command({ executable: executables.device, cwd: lane.directory, env: lane.env,
+    if (!lane.env || !preparedTools) throw new Error('Lane device is unavailable.');
+    const result = await command({ executable: preparedTools.commands.device, cwd: lane.directory, env: lane.env,
       timeoutMs: limits.deviceMs, signal: cleanup ? undefined : options.signal,
       args: [...args, '--platform', 'ios', '--session', lane.attemptId, '--json'] });
-    if (!succeeded(result)) throw new Error('Lane device command did not complete.');
+    if (!succeeded(result)) {
+      const operation = args[0] === 'record' ? `record ${args[1]}` : args[0]!;
+      let error: DeviceFailure['error'] = null;
+      try {
+        const parsed = deviceErrorSchema.safeParse(JSON.parse(result.stdout));
+        if (parsed.success) error = { code: sanitize(parsed.data.error.code, secrets), message: sanitize(parsed.data.error.message, secrets) };
+      } catch {}
+      lane.deviceFailure ??= { operation, termination: result.termination, error,
+        stdout: sanitize(result.stdout, secrets).slice(0, 2000), stderr: sanitize(result.stderr, secrets).slice(0, 2000) };
+      lane.problem ??= `Device ${operation} did not complete.`;
+      throw new Error('Lane device command did not complete.');
+    }
     return result.stdout;
   };
   const media = async (lane: Lane, name: string, kind: 'png' | 'mp4') => {
@@ -91,6 +107,10 @@ export async function executeSwarm(options: SwarmOptions) {
   try {
     const prepared = await qaPreflight(options);
     options.signal.throwIfAborted();
+    preparedTools = await prepareQaTools({ sourceDirectory: options.cwd, directory: join(privateDirectory, 'tools'),
+      env: safeEnvironment(options.env), signal: options.signal, timeoutMs: options.limits?.toolingMs, commands: options.executables });
+    const executables = preparedTools.commands;
+    const binDirectory = preparedTools.binDirectory;
     if (!options.env.EXPO_TOKEN) throw new Error('The built-in Developer EXPO_TOKEN is required.');
     const installed = buildIdSchema.parse(options.env.AGENT_BUILD_ID);
     target = targetSchema.parse({ kind: 'check', issue: null, controller: prepared.request.source, source: prepared.request.source,
@@ -132,14 +152,14 @@ export async function executeSwarm(options: SwarmOptions) {
         simulator: new Simulator({ attemptId: laneAttempt, cwd: directory, env: controllerEnv, eas: executables.eas,
           startupMs: limits.startupMs, cleanupMs: limits.cleanupMs }),
         env: null, session: null, threadId: null, turn: null, verdict: null, identity: null,
-        recording: null, screenshots: [], recordingAttempted: false, cleanup: { state: 'not-needed' }, problem: null });
+        recording: null, screenshots: [], recordingAttempted: false, cleanup: { state: 'not-needed' }, problem: null, deviceFailure: null });
     }
     await Promise.allSettled(lanes.map(async (lane) => {
       try {
         const connected = await lane.simulator.start({ buildId: candidate.native.installed, signal: options.signal });
         lane.session = connected.session;
         secrets.push(connected.secret);
-        lane.env = { ...connected.env, HOME: join(lane.directory, 'home'),
+        lane.env = { ...connected.env, PATH: binDirectory + delimiter + (controllerEnv.PATH ?? ''), HOME: join(lane.directory, 'home'),
           AGENT_DEVICE_STATE_DIR: join(lane.directory, 'device-state'), AGENT_EVIDENCE_DIR: lane.evidenceDirectory };
       } catch { lane.problem = 'Lane simulator startup failed.'; }
     }));
@@ -156,7 +176,7 @@ export async function executeSwarm(options: SwarmOptions) {
         if (!snapshot.includes(identityLabel(candidate))) throw new Error('Installed embedded identity was not observed.');
         await device(lane, ['screenshot', join(lane.evidenceDirectory, 'controller-start.png')]);
         lane.screenshots.push(await media(lane, 'controller-start.png', 'png'));
-      } catch { lane.problem = 'Installed embedded identity verification or lane recording startup failed.'; }
+      } catch { lane.problem ??= 'Installed embedded identity verification or lane recording startup failed.'; }
     }));
     await Promise.allSettled(lanes.map(async (lane) => {
       if (lane.problem || !lane.env) return;
@@ -168,7 +188,7 @@ export async function executeSwarm(options: SwarmOptions) {
     await Promise.allSettled(lanes.map(async (lane) => {
       if (lane.problem || !lane.threadId) return;
       try {
-        const prompt = lanePrompt(lane.id, lane.attemptId, identityLabel(candidate));
+        const prompt = lanePrompt(lane.id, lane.attemptId, identityLabel(candidate), executables.device.file);
         const turn = await client.runTurn({ threadId: lane.threadId, prompt,
           outputSchema: z.toJSONSchema(laneVerdictSchema.safeExtend({ id: z.literal(lane.id),
             screenshot: z.literal(`${lane.id}.png`) }), { io: 'input' }), timeoutMs: limits.agentMs, signal: options.signal });
@@ -186,9 +206,15 @@ export async function executeSwarm(options: SwarmOptions) {
           observed: identityLabel(candidate), sessionId: lane.session!.id, attemptId: lane.attemptId,
           threadId: lane.threadId, turn: lane.turn, promptSha256: digest(prompt), observedAt: Date.now(),
         }, null, 2) });
-      } catch { lane.problem = 'Lane turn, strict verdict, device identity, or evidence validation failed.'; }
+      } catch { lane.problem ??= 'Lane turn, strict verdict, device identity, or evidence validation failed.'; }
     }));
-  } catch { problem = 'QA setup or identity verification did not complete.'; }
+  } catch (error) {
+    if (error instanceof QaToolPreparationError) {
+      preparation = { stage: error.stage, tool: error.tool, reason: error.reason };
+      preparationDiagnostics = error.diagnostics;
+      problem = error.message;
+    } else problem = 'QA setup or identity verification did not complete.';
+  }
   finally {
     if (server) serverStop = await server.close();
     await Promise.allSettled(lanes.map(async (lane) => {
@@ -203,11 +229,11 @@ export async function executeSwarm(options: SwarmOptions) {
         }
       } finally { lane.cleanup = await lane.simulator.cleanup(); }
     }));
-    if (authFile) {
+    if (authFile && preparedTools) {
       try {
         const refreshed = validateSubscription(JSON.parse(await readFile(authFile, 'utf8')));
         secrets.push(...Object.values(refreshed.tokens));
-        await persistSubscription({ file: authFile, eas: executables.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
+        await persistSubscription({ file: authFile, eas: preparedTools.commands.eas, cwd: options.cwd, env: options.env, timeoutMs: limits.authMs });
         auth = 'persisted';
       } catch { auth = 'write-back-failed'; }
     }
@@ -227,14 +253,15 @@ export async function executeSwarm(options: SwarmOptions) {
       verdict: lane?.verdict ? { ...lane.verdict, detail: sanitize(lane.verdict.detail, secrets) } : null,
       identity: lane?.identity ?? null, screenshots: lane?.screenshots ?? [], recording: lane?.recording ?? null,
       recordingSessionId: lane?.recording ? lane.session?.id ?? null : null,
-      cleanup: lane?.cleanup ?? { state: 'not-needed' }, reason: lane?.problem ?? (complete ? null : 'Lane evidence is incomplete.') };
+      cleanup: lane?.cleanup ?? { state: 'not-needed' }, deviceFailure: lane?.deviceFailure ?? null,
+      reason: lane?.problem ?? (complete ? null : 'Lane evidence is incomplete.') };
   });
   const definitive = !problem && target && auth === 'persisted' && serverStop?.state === 'stopped' && serverStop.healthy && !serverStop.forced && concurrent &&
     records.every((lane) => lane.state !== 'INCONCLUSIVE') && new Set(records.map((lane) => lane.session?.id)).size === 3;
   const state = definitive ? records.some((lane) => lane.state === 'FAIL') ? 'FAIL' : 'PASS' : 'INCONCLUSIVE';
   const result = { version: 1, kind: 'qa', attemptId, state, startedAt, finishedAt: Date.now(),
     runId: options.env.AGENT_RUN_ID ?? 'local', target, model: codexModel,
-    tools: { bun: '1.2.22', eas: '25.3.0', codex: '0.165.0', agentDevice: '0.21.33' },
+    tools: qaToolPins, preparation, preparationDiagnostics,
     auth, server: { processId: server?.pid ?? null, stop: serverStop }, concurrent, lanes: records,
     reason: problem ?? (definitive ? null : 'All lanes, concurrent turns, cleanup, and auth persistence must be verified.') };
   await publishFile({ directory: publicDirectory, name: 'result.json', bytes: sanitize(JSON.stringify(result, null, 2), secrets) });

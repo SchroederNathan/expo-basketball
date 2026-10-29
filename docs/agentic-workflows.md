@@ -1,7 +1,7 @@
 # Run the Lob agent workflows
 
 Agentic CI, Bug triage, Issue to PR, and QA Swarm have executable workflows for the PrizePicks demonstration. The [issue label bridge](agent-label-bridge.md) starts triage or coding on the explicit release branch. The [presentation guide](prizepicks-demo.md) records the current cloud evidence.
-The manual baseline check, baseline bug reproduction, coding PR publication, and duplicate-request reuse have cloud receipts linked in the presentation guide. Repaired PR acceptance and the three-session QA run remain under rehearsal. Local tests and EAS YAML validation do not establish those results.
+The manual baseline check, baseline bug reproduction, coding PR publication, duplicate-request reuse, repaired PR acceptance, and repaired-candidate triage have cloud receipts linked in the presentation guide. The three-session QA run remains under rehearsal. Local tests and EAS YAML validation do not establish those results.
 
 The repository remains public at `SchroederNathan/expo-basketball`, as explicitly approved by the operator for subscription authentication. OpenAI's [advanced CI auth guide](https://learn.chatgpt.com/docs/auth/ci-cd-auth) recommends trusted private automation. This workflow retains the operator's public repository choice. Only reviewed same-repository branches are trusted. Removing tokens from the child environment is hygiene. Repository code and the agent run on the same worker and do not form a hostile-code security boundary.
 
@@ -199,4 +199,4 @@ Manual issue acceptance requires both digests. It cannot silently derive a new a
 
 Run `bun run check` and `bun run check:agentic`, then validate each changed workflow with EAS CLI 25.3.0. Controller tests use synthetic auth, real temporary Git repositories, local HTTP GitHub fixtures, fake unavailable agent/cloud executables, and real decodable media. They make no real GitHub writes or cloud runs.
 
-The remaining cloud rehearsals are acceptance PASS on the repaired native candidate, NOT_REPLICATED on that artifact, and full QA journey evidence. Real issue-label events dispatched triage and coding from `release/prizepicks-demo`. Triage returned REPLICATED, coding opened PR 4, and a repeated request reused the same head and PR without loading subscription auth. Coding waited with no jobs while triage owned the shared subscription stream. See the presentation guide for exact runs and limitations.
+Full QA journey evidence remains under rehearsal. Real issue-label events dispatched triage and coding from `release/prizepicks-demo`. Triage returned REPLICATED, coding opened PR 4, and a repeated request reused the same head and PR without loading subscription auth. Coding waited with no jobs while triage owned the shared subscription stream. Original-issue PR acceptance passed on the repaired candidate, and a separate triage run returned NOT_REPLICATED for that artifact. See the presentation guide for exact runs and limitations.

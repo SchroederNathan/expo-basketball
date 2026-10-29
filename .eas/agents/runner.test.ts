@@ -134,6 +134,11 @@ setTimeout(() => process.exit(0), 5000);
     assert.equal(pids.length, nested ? 3 : 2, 'the fixture must create every descendant');
     assert.equal(succeeded(result), false);
     assert.equal(result.termination.kind, mode === 'timeout' ? 'timeout' : 'signal');
+    assert.equal(result.observation.trigger, mode === 'natural' ? 'exit' : mode === 'abort' ? 'cancelled' : 'timeout');
+    assert.equal(result.observation.cleanup.forced, true);
+    assert.equal(result.observation.cleanup.confirmed, !denySignals);
+    if (mode === 'natural') assert.equal(result.observation.exitCode, 0);
+    if (denySignals) assert.equal(result.observation.cleanup.issue, 'signal-failed');
     if (denySignals) {
       assert.ok(result.termination.reason.includes('cleanup was not confirmed'));
       assert.ok(pids.some((pid) => commandProcess(pid)?.state.startsWith('S')), 'the denied signal must leave a live descendant for fixture cleanup');
