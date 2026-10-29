@@ -1,7 +1,7 @@
 # Run the Lob agent workflows
 
-Agentic CI, Bug triage, and Issue to PR have executable manual workflows for the PrizePicks demonstration. QA Swarm remains held until the parent verifies the authentication topology. The parent owns cloud rehearsal and real credential provisioning.
-The [manual baseline Agentic CI rehearsal](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a185ea-35e7-7406-93dc-19648335a00e) passed with real device evidence, exact candidate identity, persisted auth, and independently confirmed session stop. The issue, PR-event, and QA paths still need their own cloud proofs. Local tests and EAS YAML validation do not establish those results.
+Agentic CI, Bug triage, Issue to PR, and QA Swarm have executable workflows for the PrizePicks demonstration. The [issue label bridge](agent-label-bridge.md) starts triage or coding on the explicit release branch. The [presentation guide](prizepicks-demo.md) records the current cloud evidence.
+The manual baseline check, baseline bug reproduction, coding PR publication, and duplicate-request reuse have cloud receipts linked in the presentation guide. Repaired PR acceptance and the three-session QA run remain under rehearsal. Local tests and EAS YAML validation do not establish those results.
 
 The repository remains public at `SchroederNathan/expo-basketball`, as explicitly approved by the operator for subscription authentication. OpenAI's [advanced CI auth guide](https://learn.chatgpt.com/docs/auth/ci-cd-auth) recommends trusted private automation. This workflow retains the operator's public repository choice. Only reviewed same-repository branches are trusted. Removing tokens from the child environment is hygiene. Repository code and the agent run on the same worker and do not form a hostile-code security boundary.
 
@@ -31,8 +31,8 @@ Do not put unrelated production credentials in this environment.
 The parent requests credentials only when this runner is ready. Do not read a developer's existing local `auth.json` as part of setup or local tests.
 Provision a dedicated managed ChatGPT login through the approved secret-delivery path. Its file must contain `auth_mode: "chatgpt"`, access, ID, and refresh tokens, and `last_refresh`. API-key and external-token auth are rejected.
 
-Use this credential only for this serialized workflow stream. Do not keep using its seed copy on another machine, and do not share it with concurrent jobs. The inconclusive parallel-Codex probe does not prove a safe QA auth topology.
-All workflow runs share `codex-subscription-agentic-ios` with `queue: max` and `cancel_in_progress: false`. Bug triage and Issue to PR join this same stream. QA Swarm must wait for an approved topology.
+Use this credential only for this serialized workflow stream. Do not keep using its seed copy on another machine or share it across independent concurrent jobs.
+All workflow runs share `codex-subscription-agentic-ios` with `queue: max` and `cancel_in_progress: false`. The [authenticated concurrency probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) verified three overlapping threads in one server, separate shell environments, healthy shutdown, and auth persistence. Remote simulator capacity and journey acceptance require the separate QA run.
 
 The controller copies the Secret file into a private per-attempt `CODEX_HOME` with file mode 0600. It verifies write-back before starting Codex and sets managed ChatGPT authentication with file storage. Codex refreshes through its own normal flow.
 In `finally`, the controller validates and writes the resulting file back with its dedicated persistence token through the pinned EAS command. The coding agent does not receive that token.
@@ -81,7 +81,7 @@ bun run eas workflow:run .eas/workflows/agentic-ci-ios.yml \
   --non-interactive
 ```
 
-`--ref` selects the actual workflow/native source. No checkout hook retargets EAS metadata. The preflight compares branch resolution, candidate SHA, local checkout, baseline ancestry, and any EAS source metadata. Disagreement fails.
+`--ref` selects the actual workflow/native source. No checkout hook retargets EAS metadata. The preflight compares branch resolution, candidate SHA, local checkout, baseline ancestry, and any EAS source metadata. Disagreement fails. When ancestry checks need history omitted by a shallow checkout, preflight fetches it from origin and verifies that HEAD has not moved. `fetch_depth` is not an input to EAS checkout.
 The native graph computes a fingerprint, looks up a compatible `agent-preview` simulator build, builds on an empty successful lookup, or repacks a hit. Lookup errors fail rather than masquerading as a cache miss.
 The runner fetches installed build metadata again before starting the simulator. Candidate SHA, profile, platform, simulator suitability, native fingerprint, app ID, runtime, installed build ID, and optional native source build/SHA must agree.
 Manual success and a later real `pull_request` trigger are separate proofs. PR runs target `main` or `release/**`, require a non-draft same-repository head, and recheck the current PR author association and SHA through GitHub. Forks receive no agent run. The parent owns enabling or rehearsing that event path.
@@ -114,8 +114,7 @@ The workflow's final job fails unless the controller returns the exact state PAS
 
 ## Prepare a trusted synthetic issue
 
-Wait for the parent's first cloud/auth proof. Review and publish this implementation, then advance the audited baseline before dispatching its new workflows. Do not change EAS variables from an agent task.
-Prepare `release/prizepicks-demo`, or choose another explicit target branch containing that reviewed baseline. Current `main` lacks it. There is no implicit default-branch fallback.
+The installed demo uses `release/prizepicks-demo` with the seeded defect and a reviewed controller baseline. Choose an explicit target branch containing that baseline. There is no implicit default-branch fallback. Keep both the target and the EAS baseline variable unchanged while its workflows run.
 
 Create an open same-repository issue owned by an OWNER, MEMBER, or COLLABORATOR. Include this exact marker in its body, then describe the Jordan Vale label bug and copy the original criteria from `demo/issues/player-label.md`.
 
@@ -200,4 +199,4 @@ Manual issue acceptance requires both digests. It cannot silently derive a new a
 
 Run `bun run check` and `bun run check:agentic`, then validate each changed workflow with EAS CLI 25.3.0. Controller tests use synthetic auth, real temporary Git repositories, local HTTP GitHub fixtures, fake unavailable agent/cloud executables, and real decodable media. They make no real GitHub writes or cloud runs.
 
-The parent still needs to prove triage REPLICATED on the baseline, a real coding PR, duplicate issue dispatch, acceptance PASS on the repaired native candidate, NOT_REPLICATED on that artifact, evidence upload/comment visibility, and refreshed-auth/cleanup receipts across serialized runs. The [label bridge](agent-label-bridge.md) adds the issue entry point after installation on `main` and actual Actions rehearsal. QA Swarm remains held pending its lifecycle fixes and authenticated topology proof.
+The remaining cloud rehearsals are acceptance PASS on the repaired native candidate, NOT_REPLICATED on that artifact, and full QA journey evidence. Real issue-label events dispatched triage and coding from `release/prizepicks-demo`. Triage returned REPLICATED, coding opened PR 4, and a repeated request reused the same head and PR without loading subscription auth. Coding waited with no jobs while triage owned the shared subscription stream. See the presentation guide for exact runs and limitations.

@@ -54,8 +54,8 @@ export async function preflight({ env, cwd, apiBase = 'https://api.github.com' }
   };
   const repository = repoSchema.parse(await get(''));
   if (repository.full_name !== request.repository) throw new Error('Repository identity mismatch.');
-  if (request.pullRequest !== null) {
-    const pr = prSchema.parse(await get(`/pulls/${request.pullRequest}`));
+  const pr = request.pullRequest === null ? null : prSchema.parse(await get(`/pulls/${request.pullRequest}`));
+  if (pr) {
     if (pr.head.repo.full_name !== request.repository || pr.base.repo.full_name !== request.repository ||
       pr.head.sha !== request.source.sha || pr.head.ref !== request.source.ref) throw new Error('PR source/ref disagreement.');
     const receipt = readAcceptance(pr.body ?? '');
@@ -64,16 +64,12 @@ export async function preflight({ env, cwd, apiBase = 'https://api.github.com' }
       if (receipt.target.ref !== pr.base.ref) throw new Error('PR base differs from original target.');
       task = 'acceptance';
       expected = receipt;
-      const ancestry = await command({ executable: { file: 'git', args: [] }, args: ['merge-base', '--is-ancestor', receipt.target.sha, pr.head.sha], cwd, env, timeoutMs: 10_000 });
-      if (!succeeded(ancestry)) throw new Error('Issue candidate lacks its frozen base ancestry.');
     }
-    const base = await command({ executable: { file: 'git', args: [] }, args: ['merge-base', '--is-ancestor', request.baseline, pr.base.sha], cwd, env, timeoutMs: 10_000 });
-    if (!succeeded(base)) throw new Error('PR target branch lacks the audited workflow baseline.');
   }
   const resolved = branchSchema.parse(await get(`/branches/${encodeURIComponent(request.source.ref)}`));
   if (resolved.name !== request.source.ref || resolved.commit.sha !== request.source.sha) throw new Error('Requested branch/source disagreement.');
-  const git = async (args: string[]) => {
-    const result = await command({ executable: { file: 'git', args: [] }, args, cwd, env, timeoutMs: 10_000 });
+  const git = async (args: string[], timeoutMs = 10_000) => {
+    const result = await command({ executable: { file: 'git', args: [] }, args, cwd, env, timeoutMs });
     if (!succeeded(result)) throw new Error('Audited workflow baseline is absent or modified.');
     return result.stdout.trim();
   };
@@ -81,6 +77,18 @@ export async function preflight({ env, cwd, apiBase = 'https://api.github.com' }
   const actualSha = shaSchema.parse(await git(['rev-parse', 'HEAD']));
   if (actualSha !== request.source.sha || (env.EAS_BUILD_GIT_COMMIT_HASH && env.EAS_BUILD_GIT_COMMIT_HASH !== actualSha)) {
     throw new Error('Workflow checkout differs from the candidate. Dispatch at the exact SHA.');
+  }
+  if ((request.baseline !== actualSha || pr) && await git(['rev-parse', '--is-shallow-repository']) === 'true') {
+    await git(['fetch', '--no-tags', '--no-recurse-submodules', '--no-auto-maintenance', '--unshallow', 'origin', request.source.sha], 60_000);
+    if (await git(['rev-parse', 'HEAD']) !== actualSha) throw new Error('History fetch changed the pinned checkout.');
+  }
+  if (pr) {
+    if (expected) {
+      const ancestry = await command({ executable: { file: 'git', args: [] }, args: ['merge-base', '--is-ancestor', expected.target.sha, pr.head.sha], cwd, env, timeoutMs: 10_000 });
+      if (!succeeded(ancestry)) throw new Error('Issue candidate lacks its frozen base ancestry.');
+    }
+    const base = await command({ executable: { file: 'git', args: [] }, args: ['merge-base', '--is-ancestor', request.baseline, pr.base.sha], cwd, env, timeoutMs: 10_000 });
+    if (!succeeded(base)) throw new Error('PR target branch lacks the audited workflow baseline.');
   }
   await git(['merge-base', '--is-ancestor', request.baseline, actualSha]);
   await git(['diff', '--exit-code', request.baseline, actualSha, '--', ...protectedFiles]);

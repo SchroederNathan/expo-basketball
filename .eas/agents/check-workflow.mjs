@@ -65,8 +65,8 @@ for (const name of ['agentic-ci-ios', 'bug-triage', 'issue-to-pr']) {
     assert.ok(!['submit', 'update'].includes(job.type));
     for (const step of job.steps ?? []) {
       if (step.uses === 'eas/checkout') {
-        assert.equal(step.with.fetch_depth, 0);
-        assert.equal(step.with.ref, undefined);
+        assert.equal(step.with?.fetch_depth, undefined);
+        assert.equal(step.with?.ref, undefined);
       }
     }
   }

@@ -39,8 +39,6 @@ jobs:
       AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - name: Verify trusted source
         run: bun .eas/agents/qa-swarm.ts preflight
