@@ -98,7 +98,7 @@ The separate direct command is `bun .eas/agents/qa-swarm.ts run`. It requires th
 
 Results are under `agent-output/qa/public/<attempt-id>/`. Each lane has its own directory. `result.json` binds the target, sessions, thread receipts, media hashes, cleanup, and subscription persistence. `report.md` summarizes the result. `agent-output/qa/status.json` supplies the final EAS gate. Missing status or any state other than `PASS` fails the workflow. The upload includes only the public evidence subtree.
 
-A failed device command retains its operation and process termination in `deviceFailure`. When the CLI returns a recognized structured error, its bounded code and message are redacted before publication. Raw command output and stderr remain excluded. Later stage and cleanup errors do not overwrite the first device failure.
+A failed device command retains its operation and process termination in `deviceFailure`. When the CLI returns a recognized structured error, its bounded code and message are redacted before publication. Launcher failures can precede that JSON response, so failed commands also retain at most 2,000 characters from each output stream, after credential and URL redaction. Successful command output remains excluded. Later stage and cleanup errors do not overwrite the first device failure.
 
 ## Reproduce local checks
 

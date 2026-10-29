@@ -146,6 +146,7 @@ if (tool === 'server') {
   if (c.mode.startsWith('device-open-failed') && affected && args[0] === 'open') {
     if (c.mode === 'device-open-failed-json') out({ ok: false, error: { code: 'REMOTE_UNAVAILABLE',
       message: `Connection failed with synthetic-device-token-${lane} at https://example.invalid/device?token=private` } });
+    else if (c.mode.endsWith('stderr')) process.stderr.write(`error: Tool resolution failed for synthetic-device-token-${lane} at https://example.invalid/device?token=private`);
     else process.stdout.write('Tool resolution failed.');
     process.exit(9);
   }
