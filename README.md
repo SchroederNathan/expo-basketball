@@ -25,6 +25,8 @@ The default API needs no credentials. Copy `.env.example` to `.env.local` only w
 
 Read the [implementation plan](docs/port-plan.md), [API reference](docs/api.md), [development diaries](docs/diary/README.md), and [decision trail](docs/decisions.tsv).
 
+The [research notes](docs/research/README.md) collect internal findings and demo plans for Expo agentic workflows and the PrizePicks presentation.
+
 ## Check the app
 
 ```sh
