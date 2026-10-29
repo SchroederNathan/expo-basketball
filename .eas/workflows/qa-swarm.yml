@@ -1,0 +1,144 @@
+name: QA Swarm iOS
+
+'on':
+  workflow_dispatch:
+    inputs:
+      repository:
+        type: string
+        required: true
+        description: Trusted owner/repository
+      target_ref:
+        type: string
+        required: true
+        description: Branch containing the audited workflow baseline
+      candidate_sha:
+        type: string
+        required: true
+        description: Exact candidate SHA, also required as workflow --ref
+      pr_number:
+        type: string
+        required: false
+        description: Optional trusted same-repository PR number
+
+permissions:
+  account:
+    role: developer
+
+concurrency:
+  group: codex-subscription-agentic-ios
+  queue: max
+  cancel_in_progress: false
+
+defaults:
+  tools:
+    bun: 1.2.22
+
+jobs:
+  preflight:
+    name: Verify trusted candidate
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+    steps:
+      - uses: eas/checkout
+        with:
+          fetch_depth: 0
+      - uses: eas/install_node_modules
+      - run: bun .eas/agents/qa-swarm.ts preflight
+
+  fingerprint:
+    type: fingerprint
+    needs: [preflight]
+    environment: preview
+    env:
+      EXPO_PUBLIC_AGENT_DEMO: prizepicks-v1
+
+  get_build:
+    type: get-build
+    needs: [fingerprint]
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+      simulator: true
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      wait_for_in_progress: true
+
+  build:
+    type: build
+    needs: [get_build]
+    if: ${{ !needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+
+  repack:
+    type: repack
+    needs: [get_build]
+    if: ${{ needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      build_id: ${{ needs.get_build.outputs.build_id }}
+      profile: agent-preview
+      embed_bundle_assets: true
+      js_bundle_only: false
+
+  swarm:
+    name: Check three concurrent owned iOS lanes
+    needs: [preflight, fingerprint, get_build]
+    after: [build, repack]
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+      AGENT_RUN_ID: ${{ workflow.id }}
+      AGENT_RUN_URL: ${{ workflow.url }}
+      AGENT_BUILD_ID: ${{ after.build.outputs.build_id || after.repack.outputs.build_id }}
+      AGENT_NATIVE_SOURCE_BUILD_ID: ${{ needs.get_build.outputs.build_id || '' }}
+      AGENT_NATIVE_SOURCE_SHA: ${{ needs.get_build.outputs.git_commit_hash || '' }}
+      AGENT_FINGERPRINT: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+    outputs:
+      state: ${{ steps.swarm.outputs.state }}
+      attempt_id: ${{ steps.swarm.outputs.attempt_id }}
+    steps:
+      - uses: eas/checkout
+        with:
+          fetch_depth: 0
+      - uses: eas/install_node_modules
+      - name: Install media evidence tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - id: swarm
+        run: |
+          rm -f agent-output/qa/status.json
+          bun .eas/agents/qa-swarm.ts run || true
+          if [ -f agent-output/qa/status.json ]; then
+            set-output state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/qa/status.json", "utf8")).state')"
+            set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/qa/status.json", "utf8")).attemptId')"
+          else
+            set-output state INCONCLUSIVE
+          fi
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: qa-swarm-ios-evidence
+          path: agent-output/qa/public/**/*
+
+  result:
+    name: Require a verified PASS
+    after: [preflight, fingerprint, get_build, build, repack, swarm]
+    if: ${{ after.swarm.outputs.state != 'PASS' }}
+    steps:
+      - run: |
+          echo 'The QA swarm has no verified PASS. Inspect its result and evidence artifacts.'
+          exit 1
