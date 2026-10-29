@@ -1,4 +1,4 @@
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
@@ -34,6 +34,10 @@ if (args[0] === '--version') {
     await new Promise(() => {});
   }
   if (c.versionTool === tool && c.versionMode === 'fail') { process.stderr.write('synthetic-secret-do-not-publish'); process.exit(9); }
+  if (c.versionTool === tool && c.versionMode === 'stderr') { process.stdout.write(c.versionStdout ?? ''); process.stderr.write(c.versionStderr); process.exit(9); }
+  if (c.versionTool === tool && c.versionMode === 'signal') process.kill(process.pid, 'SIGTERM');
+  if (c.versionTool === tool && c.versionMode === 'cleanup-fail') { chmodSync(c.root, 0o500); process.exit(9); }
+  if (c.versionTool === tool && c.versionMode === 'nonzero-version') { process.stdout.write(`${versions[tool]}\n`); process.exit(9); }
   if (c.versionTool === tool || (c.mode === 'bad-version' && tool === 'device')) process.stdout.write('0.0.0\n');
   else process.stdout.write(`${versions[tool]}\n`);
   process.exit(0);
@@ -60,7 +64,8 @@ if (tool === 'installer') {
     if (c.installMode === 'missing-bin' && fixtureTool === 'device') continue;
     if (c.installMode === 'bin-directory' && fixtureTool === 'device') { mkdirSync(join(directory, entry)); continue; }
     if (c.installMode === 'bad-metadata' && fixtureTool === 'device') writeFileSync(join(directory, 'package.json'), 'not json');
-    const source = c.installMode === 'missing-bundle' && fixtureTool === 'device' ? `import './missing-bundle.mjs';`
+    const source = c.installMode === 'missing-semver' && fixtureTool === 'eas' ? `import { createRequire } from 'node:module'; createRequire(import.meta.url)('semver');`
+      : c.installMode === 'missing-bundle' && fixtureTool === 'device' ? `import './missing-bundle.mjs';`
       : c.installMode === 'missing-native' && fixtureTool === 'server' ? `import './missing-native.mjs';`
       : `process.env.QA_FIXTURE_ENTRY = process.argv[1]; process.argv = [process.execPath, ${JSON.stringify(import.meta.filename)}, ${JSON.stringify(configuration)}, ${JSON.stringify(fixtureTool)}, ...process.argv.slice(2)]; await import(${JSON.stringify(import.meta.url)});`;
     writeFileSync(join(directory, entry), source);

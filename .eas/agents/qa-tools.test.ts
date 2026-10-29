@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -9,7 +9,8 @@ import { lanePrompt } from './qa-lanes';
 import { command, succeeded } from './process';
 import { prepareQaTools, qaToolPins, QaToolPreparationError } from './qa-tools';
 
-type FixtureConfig = { installMode?: string; runtimeMode?: string; versionTool?: string; versionMode?: string; versionDelayMs?: number };
+type FixtureConfig = { installMode?: string; runtimeMode?: string; versionTool?: string; versionMode?: string; versionDelayMs?: number;
+  versionStderr?: string; versionStdout?: string };
 type Event = { tool: string; args?: string[]; cwd?: string; pid?: number; name?: string; home?: string; env?: NodeJS.ProcessEnv; envKeys?: string[] };
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const node = execFileSync('node', ['-p', 'process.execPath'], { encoding: 'utf8' }).trim();
@@ -44,6 +45,7 @@ async function fixture(config: FixtureConfig, inspect: (context: {
   };
   try { await inspect({ options, log, bin, root, executable, abort: () => cancellation.abort() }); }
   finally {
+    await chmod(root, 0o700);
     const survivors = (await log()).filter((event) => event.tool === 'descendant').filter((event) => {
       try { process.kill(event.pid!, 0); return true; } catch { return false; }
     });
@@ -227,4 +229,84 @@ test('installation and all version probes share one preparation deadline', async
 
 test('the QA Codex pin agrees with the unchanged shared command', () => {
   assert.deepEqual(codexCommand, { file: 'bunx', args: [`@openai/codex@${qaToolPins.codex}`] });
+});
+
+async function preparationFailure(options: Parameters<typeof prepareQaTools>[0]) {
+  try { await prepareQaTools(options); }
+  catch (error) { assert.ok(error instanceof QaToolPreparationError); return error; }
+  assert.fail('Preparation must fail.');
+}
+
+for (const [versionMode, reason, exitCode, signal, matches] of [
+  ['nonzero-version', 'command-failed', 9, null, true], ['signal', 'command-failed', null, 'SIGTERM', false],
+  ['mismatch', 'version-mismatch', 0, null, false],
+] as const) {
+  test(`preparation diagnostics distinguish ${versionMode} without changing readiness`, async () => {
+    await fixture({ versionTool: 'eas', versionMode }, async ({ options, log }) => {
+      const error = await preparationFailure(options);
+      assert.equal(error.reason, reason);
+      const diagnostic = error.diagnostics!;
+      assert.equal(diagnostic.nodeVersion, execFileSync(node, ['-p', 'process.versions.node'], { encoding: 'utf8' }).trim());
+      assert.equal(diagnostic.packageChecks, 'validated');
+      assert.equal(diagnostic.storageCleanup, 'removed');
+      assert.equal(diagnostic.command?.stage, 'probe');
+      assert.equal(diagnostic.command?.tool, 'eas');
+      assert.equal(diagnostic.command?.trigger, 'exit');
+      assert.equal(diagnostic.command?.exitCode, exitCode);
+      assert.equal(diagnostic.command?.signal, signal);
+      assert.equal(diagnostic.command?.versionOutputMatches, matches);
+      assert.equal(diagnostic.command?.cleanup.confirmed, true);
+      assert.ok(diagnostic.command!.elapsedMs >= 0 && diagnostic.command!.elapsedMs < 5000);
+      assert.deepEqual((await log()).filter((event) => event.tool === 'version').map((event) => event.name), ['installer', 'eas']);
+      await assert.rejects(lstat(options.directory));
+    });
+  });
+}
+
+test('a real Node loader failure identifies the trusted missing dependency and launcher', async () => {
+  await fixture({ installMode: 'missing-semver' }, async ({ options }) => {
+    const error = await preparationFailure(options);
+    assert.equal(error.reason, 'command-failed');
+    assert.equal(error.diagnostics?.command?.exitCode, 1);
+    assert.deepEqual(error.diagnostics?.command?.stderr, { present: true, truncated: false,
+      code: 'MODULE_NOT_FOUND', type: null, dependency: 'semver', target: 'locked-package', cause: 'MODULE_NOT_FOUND', origin: 'eas-launcher' });
+  });
+});
+
+for (const [stderr, cause, dependency, target, truncated] of [
+  ["Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@oclif/core' imported from /private/synthetic-secret?token=signed-url", 'ERR_MODULE_NOT_FOUND', '@oclif/core', 'locked-package', false],
+  ["Error: Cannot find module 'semver/private-secret'\ncode: 'MODULE_NOT_FOUND'", 'MODULE_NOT_FOUND', 'semver', 'locked-package-subpath', false],
+  ["Error: Cannot find module 'synthetic-secret'\ncode: 'MODULE_NOT_FOUND'", 'MODULE_NOT_FOUND', null, 'unrecognized-specifier', false],
+  ["Error: Cannot find module '/private/synthetic-secret'\ncode: 'MODULE_NOT_FOUND'", 'MODULE_NOT_FOUND', null, 'absolute-file', false],
+  ["Error: Cannot find module './synthetic-secret'\ncode: 'MODULE_NOT_FOUND'", 'MODULE_NOT_FOUND', null, 'relative-file', false],
+  ["Error: EACCES: permission denied, open '/private/synthetic-secret'", 'EACCES', null, null, false],
+  ["TypeError: synthetic-secret with https://example.invalid/?token=signed-url", 'TypeError', null, null, false],
+  ["code: 'SYNTHETIC_SECRET'\nEXPO_TOKEN=synthetic-secret\nAuthorization: Bearer private-token", 'unclassified', null, null, false],
+  ['synthetic-secret'.repeat(3000) + "\ncode: 'MODULE_NOT_FOUND'", 'unclassified', null, null, true],
+] as const) {
+  test(`stderr diagnostics classify ${cause}/${target}/${truncated} without echoing private text`, async () => {
+    await fixture({ versionTool: 'eas', versionMode: 'stderr', versionStderr: stderr, versionStdout: 'synthetic-stdout-secret' }, async ({ options, root }) => {
+      const error = await preparationFailure(options);
+      assert.equal(error.diagnostics?.command?.stderr.cause, cause);
+      assert.equal(error.diagnostics?.command?.stderr.dependency, dependency);
+      assert.equal(error.diagnostics?.command?.stderr.target, target);
+      assert.equal(error.diagnostics?.command?.stderr.truncated, truncated);
+      const text = JSON.stringify(error);
+      assert.ok(text.length < 2000);
+      for (const secret of ['synthetic-secret', 'synthetic-stdout-secret', 'private-secret', 'signed-url', 'private-token', 'SYNTHETIC_SECRET', root, 'EXPO_TOKEN', 'Authorization']) assert.ok(!text.includes(secret), secret);
+    });
+  });
+}
+
+test('storage cleanup failure retains the original child failure and distinct cleanup health', async () => {
+  await fixture({ versionTool: 'eas', versionMode: 'cleanup-fail' }, async ({ options }) => {
+    const error = await preparationFailure(options);
+    assert.equal(error.stage, 'probe');
+    assert.equal(error.tool, 'eas');
+    assert.equal(error.reason, 'command-failed');
+    assert.equal(error.diagnostics?.command?.exitCode, 9);
+    assert.equal(error.diagnostics?.command?.cleanup.confirmed, true);
+    assert.equal(error.diagnostics?.storageCleanup, 'failed');
+    assert.ok(await lstat(options.directory));
+  });
 });

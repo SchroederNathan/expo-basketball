@@ -14,6 +14,8 @@ export async function probeQaTools(options: { cwd: string; env: NodeJS.ProcessEn
   let status: 'PASS' | 'INCONCLUSIVE' = 'INCONCLUSIVE';
   let reason: string | null = null;
   let preparationMs: number | null = null;
+  let preparation: Pick<QaToolPreparationError, 'stage' | 'tool' | 'reason' | 'diagnostics'> | null = null;
+  let cleanup: 'removed' | 'failed' = 'failed';
   const outcomes: { probe: string; passed: boolean }[] = [];
   try {
     const trusted = await preflight({ cwd: options.cwd, env: options.env, apiBase: options.githubApiBase });
@@ -56,12 +58,13 @@ export async function probeQaTools(options: { cwd: string; env: NodeJS.ProcessEn
     status = 'PASS';
   } catch (error) {
     reason = error instanceof QaToolPreparationError ? error.message : 'Trusted source or prepared command probe failed.';
+    if (error instanceof QaToolPreparationError) preparation = { stage: error.stage, tool: error.tool, reason: error.reason, diagnostics: error.diagnostics };
   } finally {
-    try { await rm(privateDirectory, { recursive: true, force: true }); }
-    catch { status = 'INCONCLUSIVE'; reason = 'Private tool probe cleanup failed.'; }
+    try { await rm(privateDirectory, { recursive: true, force: true }); cleanup = 'removed'; }
+    catch { status = 'INCONCLUSIVE'; reason ??= 'Private tool probe cleanup failed.'; }
   }
   const receipt = { status, source, pins: qaToolPins, platform: process.platform, arch: process.arch,
-    preparationMs, elapsedMs: Math.round(performance.now() - started), outcomes, reason };
+    preparationMs, elapsedMs: Math.round(performance.now() - started), outcomes, reason, preparation, cleanup };
   await mkdir(dirname(options.output), { recursive: true, mode: 0o700 });
   await writeFile(options.output, JSON.stringify(receipt, null, 2), { mode: 0o600 });
   return receipt;

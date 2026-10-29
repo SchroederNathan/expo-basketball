@@ -68,6 +68,7 @@ export async function executeSwarm(options: SwarmOptions) {
   const privateDirectory = await mkdtemp(join(tmpdir(), 'lob-qa-'));
   let preparedTools: PreparedQaTools | null = null;
   let preparation: Pick<QaToolPreparationError, 'stage' | 'tool' | 'reason'> | null = null;
+  let preparationDiagnostics: QaToolPreparationError['diagnostics'] = null;
   const limits = options.limits ?? deadlines;
   const controllerEnv: NodeJS.ProcessEnv = { ...safeEnvironment(options.env), EXPO_TOKEN: options.env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
   const secrets = Object.entries(options.env).filter(([key]) => /TOKEN|SECRET|KEY|AUTH/.test(key)).map(([, value]) => value ?? '');
@@ -210,6 +211,7 @@ export async function executeSwarm(options: SwarmOptions) {
   } catch (error) {
     if (error instanceof QaToolPreparationError) {
       preparation = { stage: error.stage, tool: error.tool, reason: error.reason };
+      preparationDiagnostics = error.diagnostics;
       problem = error.message;
     } else problem = 'QA setup or identity verification did not complete.';
   }
@@ -259,7 +261,7 @@ export async function executeSwarm(options: SwarmOptions) {
   const state = definitive ? records.some((lane) => lane.state === 'FAIL') ? 'FAIL' : 'PASS' : 'INCONCLUSIVE';
   const result = { version: 1, kind: 'qa', attemptId, state, startedAt, finishedAt: Date.now(),
     runId: options.env.AGENT_RUN_ID ?? 'local', target, model: codexModel,
-    tools: qaToolPins, preparation,
+    tools: qaToolPins, preparation, preparationDiagnostics,
     auth, server: { processId: server?.pid ?? null, stop: serverStop }, concurrent, lanes: records,
     reason: problem ?? (definitive ? null : 'All lanes, concurrent turns, cleanup, and auth persistence must be verified.') };
   await publishFile({ directory: publicDirectory, name: 'result.json', bytes: sanitize(JSON.stringify(result, null, 2), secrets) });

@@ -214,6 +214,12 @@ for (const [installMode, stage, tool, reason] of [
       const result = await executeSwarm(options);
       assert.equal(result.state, 'INCONCLUSIVE');
       assert.deepEqual(result.preparation, { stage, tool, reason });
+      assert.equal(result.preparationDiagnostics?.storageCleanup, 'removed');
+      if (installMode === 'fail') {
+        assert.equal(result.preparationDiagnostics?.command?.exitCode, 8);
+        assert.equal(result.preparationDiagnostics?.command?.stderr.cause, 'unclassified');
+        assert.equal(result.preparationDiagnostics?.command?.cleanup.confirmed, true);
+      }
       assert.equal(result.auth, 'not-loaded');
       assert.equal(result.target, null);
       assert.equal(result.server.processId, null);
@@ -256,6 +262,32 @@ for (const mode of ['normal', 'package-manager-after-ready']) {
     });
   });
 }
+
+test('the cloud probe receipt preserves a safe installed EAS loader diagnosis and no later outcomes', async () => {
+  await scenario('normal', async ({ options, root, events }) => {
+    const configuration = join(root, 'config.json');
+    await writeFile(configuration, JSON.stringify({ ...JSON.parse(await readFile(configuration, 'utf8')), installMode: 'missing-semver' }));
+    const output = join(root, 'tools-probe.json');
+    const result = await probeQaTools({ cwd: options.cwd, env: options.env, output, signal: options.signal,
+      githubApiBase: options.githubApiBase });
+    assert.equal(result.status, 'INCONCLUSIVE');
+    assert.equal(result.reason, 'QA tool preparation probe/eas/command-failed.');
+    assert.deepEqual(result.outcomes, []);
+    assert.equal(result.preparationMs, null);
+    assert.equal(result.cleanup, 'removed');
+    assert.equal(result.preparation?.diagnostics?.storageCleanup, 'removed');
+    assert.equal(result.preparation?.diagnostics?.packageChecks, 'validated');
+    assert.equal(result.preparation?.diagnostics?.command?.exitCode, 1);
+    assert.equal(result.preparation?.diagnostics?.command?.stderr.dependency, 'semver');
+    const receipt = await readFile(output, 'utf8');
+    assert.deepEqual(JSON.parse(receipt), result);
+    assert.ok(!receipt.includes(root));
+    assert.ok(!receipt.includes('synthetic-'));
+    const calls = await events();
+    assert.deepEqual(calls.filter((call) => call.tool === 'version').map((call) => call.name), ['installer']);
+    assert.ok(calls.every((call) => ['installer', 'version'].includes(call.tool)));
+  });
+});
 
 for (const failure of ['missing-node', 'old-node', 'missing-bun', 'version-deadline', 'preparation-cancelled']) {
   test(`${failure} cannot reach auth loading on the non-injected controller path`, { timeout: 10_000 }, async () => {
