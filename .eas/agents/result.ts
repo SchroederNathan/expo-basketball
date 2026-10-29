@@ -59,11 +59,14 @@ function checksSchema<const Ids extends readonly [string, ...string[]]>(ids: Ids
     state: z.enum(['PASS', 'FAIL', 'INCONCLUSIVE']),
     checks: z.array(z.strictObject({
       id: z.enum(ids), state: z.enum(['PASS', 'FAIL', 'BLOCKED']),
-      detail: z.string().min(1).max(2000), screenshot: z.string().regex(/^[a-z0-9-]+\.png$/),
+      detail: z.string().min(1).max(2000), screenshot: z.enum(ids.map((id) => `${id}.png`)),
     })).length(ids.length),
   }).superRefine((verdict, ctx) => {
     if (new Set(verdict.checks.map((check) => check.id)).size !== ids.length) {
       ctx.addIssue({ code: 'custom', message: 'Each acceptance check must appear exactly once.' });
+    }
+    if (verdict.checks.some((check) => check.screenshot !== `${check.id}.png`)) {
+      ctx.addIssue({ code: 'custom', message: 'Screenshot must belong to its acceptance check.' });
     }
     const expected = verdict.checks.some((check) => check.state === 'BLOCKED') ? 'INCONCLUSIVE'
       : verdict.checks.some((check) => check.state === 'FAIL') ? 'FAIL' : 'PASS';

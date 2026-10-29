@@ -28,6 +28,12 @@ The client records distinct thread and turn IDs. A concurrent result requires a 
 
 The controller collects every lane result even when another lane fails. It closes the server before final device cleanup, stops recording, closes each device client, and confirms each owned simulator's stopped state. It persists the resulting subscription file only through the existing helper, then removes the private directories. A failed turn, missing artifact, identity mismatch, nonconcurrent execution, unconfirmed cleanup, or failed auth persistence makes the swarm `INCONCLUSIVE`. A fully evidenced acceptance failure is `FAIL`. Only three fully evidenced passes produce `PASS`.
 
+Evidence validation decodes the complete MP4. PNG validation decodes one frame. Each file has a shared 30-second probe and decode deadline. A corrupt later frame or a deadline failure makes the lane `INCONCLUSIVE`.
+
+The server shutdown receipt includes its exit code or signal. Healthy shutdown requires exit code zero, closed pipes, no forced termination, and confirmed cleanup of the tracked process groups. The controller tracks descendant groups using PID, parent PID, process group, and start time from `/bin/ps`. It captures descendants before EOF or fatal teardown, retains observed detached groups after reparenting, and freezes surviving groups before discovering and killing their remaining descendants. Shutdown has a total budget of three times `stopMs`, normally 30 seconds in the swarm, plus event-loop and OS scheduling. At the deadline it destroys its pipe handles and returns `unconfirmed` if cleanup was not established.
+
+Process-tree tracking is not kernel containment. A process that forks and reparents entirely between snapshots can escape discovery. Unexpected launcher exit or failed process inspection prevents a healthy receipt. Linux EAS cleanup and any daemonization used by the actual device tools still need integration proof.
+
 The agent deadline is 15 minutes per turn. The controller cancels active work after 20 minutes to reserve time for bounded cleanup. Remote sessions retain their 30-minute expiry. Native build queues and cold build duration are outside the controller deadline. SIGKILL or worker loss cannot run `finally`; the parent must confirm session expiry or scoped cleanup and reseed auth before another run if refreshed credentials were lost.
 
 This is trusted automation on one worker. Per-thread environment maps and directories prevent accidental sharing. They are not a hostile-code isolation boundary between processes running as the same OS user.
@@ -58,11 +64,18 @@ The parent owns credential provisioning, cloud proof, and integration. No new re
 
 The probe launches no devices and performs no app checks. It uses the same seed and persistence helpers as the swarm. It updates the existing EAS Secret file variable before model work and again after server shutdown. Run it only in the parent's authorized credential context, with `CODEX_AUTH_JSON` and `AGENT_AUTH_WRITE_TOKEN` already supplied securely. It never reads the developer's default Codex auth file. After a cloud run may have refreshed credentials, run the probe in the same serialized EAS stream using the current Secret file rather than a stale local seed.
 
-Run from the linked project checkout with a new output path.
+Use the dedicated workflow so it consumes the current Secret file in the same subscription queue. Its first step verifies the exact source. Before any model turn, it runs the pinned protocol tests and shared command cleanup regressions on the Linux worker. Those regressions include real process snapshots that miss the launcher while observing its remaining group members.
 
 ```sh
-bun .eas/agents/codex-probe.ts /absolute/private/path/qa-concurrency-receipt.json
+bunx eas-cli@25.3.0 workflow:run .eas/workflows/codex-concurrency-probe.yml \
+  --ref "$CANDIDATE_SHA" \
+  -F repository=SchroederNathan/expo-basketball \
+  -F target_ref="$CANDIDATE_BRANCH" \
+  -F candidate_sha="$CANDIDATE_SHA" \
+  --non-interactive
 ```
+
+The workflow retains `agent-output/probe/public/result.json`. The controller entry point is `bun .eas/agents/codex-probe.ts <new-output-path>` for an already isolated, serialized credential context.
 
 The probe starts three ephemeral threads, injects distinct random synthetic markers, and asks each to run a controller-written script. It validates each shell-written receipt against the expected marker, thread ID, working directory, and timestamps. It also checks the model's strict response and overlapping turn notifications. Markers, private paths, raw events, and credentials are excluded from the published receipt. The receipt includes thread and turn IDs, controller timestamps, the process ID, shutdown state, and auth persistence status.
 

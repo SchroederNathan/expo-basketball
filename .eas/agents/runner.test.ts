@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { after, before, test } from 'node:test';
-import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -12,6 +12,7 @@ import { executeCheck, type CheckOptions } from './run';
 import { getConfig } from '@expo/config';
 import { writeSimulatorProject } from './simulator';
 import { admitFile, digest, resultSchema, targetSchema, verdictSchema } from './result';
+import { command, succeeded } from './process';
 
 let mediaDirectory = '';
 before(async () => {
@@ -22,6 +23,225 @@ before(async () => {
 });
 after(async () => { await rm(mediaDirectory, { recursive: true, force: true }); });
 
+const commandNode = execFileSync('node', ['-p', 'process.execPath'], { encoding: 'utf8' }).trim();
+const commandEnvironment = { PATH: process.env.PATH };
+const delay = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+
+for (const seconds of [0.05, 5]) {
+  test(`command observes original group after launcher exit with a ${seconds}s helper`, async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lob-command-first-snapshot-'));
+    const pidFile = join(directory, 'pids');
+    const snapshotFile = join(directory, 'first-snapshot');
+    const unrelated = spawn(commandNode, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', env: commandEnvironment });
+    const unrelatedClosed = new Promise<void>((done) => unrelated.once('close', () => done()));
+    let launcher: number | undefined;
+    let helper: number | undefined;
+    try {
+      const result = await bounded(command({ executable: { file: '/bin/sh', args: [] },
+        args: ['-c', `/bin/sleep ${seconds} >/dev/null 2>&1 & printf '%s %s' "$$" "$!" > "$1"`, 'owned-command', pidFile],
+        cwd: directory, env: commandEnvironment, timeoutMs: 4000,
+        processObserver: { file: '/bin/sh', args: ['-c', '/bin/sleep 0.015; file=$1; shift; if [ ! -f "$file" ]; then /bin/ps "$@" > "$file"; /bin/cat "$file"; else exec /bin/ps "$@"; fi', 'delayed-observer', snapshotFile] },
+      }), 4500);
+      [launcher, helper] = (await readFile(pidFile, 'utf8')).split(' ').map(Number);
+      assert.ok(launcher && helper);
+      const firstSnapshot = await readFile(snapshotFile, 'utf8');
+      assert.ok(!new RegExp(`^\\s*${launcher}\\s`, 'm').test(firstSnapshot), 'The first real snapshot must miss the launcher.');
+      assert.ok(new RegExp(`^\\s*${helper}\\s+\\d+\\s+${launcher}\\s`, 'm').test(firstSnapshot), 'The first real snapshot must observe the original group helper.');
+      assert.equal(succeeded(result), seconds === 0.05, JSON.stringify(result.termination));
+      const remaining = commandProcess(helper);
+      assert.ok(remaining === null || remaining.group !== launcher || remaining.state.startsWith('Z'), 'Observed helper must terminate before command settles.');
+      assert.ok(unrelated.pid && commandProcess(unrelated.pid), 'Unrelated process must remain alive.');
+    } finally {
+      if (!launcher || !helper) {
+        try { [launcher, helper] = (await readFile(pidFile, 'utf8')).split(' ').map(Number); } catch {}
+      }
+      if (launcher && helper && commandProcess(helper)?.group === launcher) { try { process.kill(helper, 'SIGKILL'); } catch {} }
+      unrelated.kill('SIGKILL');
+      await unrelatedClosed;
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+}
+
+async function bounded<T>(promise: Promise<T>, ms: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Command did not settle within ${ms} ms.`)), ms);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+function commandProcess(pid: number): { group: number; state: string; args: string } | null {
+  try {
+    const row = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'pgid=,stat=,args='], { encoding: 'utf8', timeout: 1000 });
+    const match = /^\s*(\d+)\s+(\S+)\s+(.+)\s*$/.exec(row);
+    assert.ok(match, 'Process inspection must return a valid row.');
+    return { group: Number(match[1]), state: match[2]!, args: match[3]! };
+  } catch (error) {
+    const failure = error as { status?: number; stdout?: string };
+    if (failure.status === 1 && failure.stdout?.trim() === '') return null;
+    throw error;
+  }
+}
+
+async function commandDescendants(mode: 'timeout' | 'abort' | 'natural', pipes: boolean, nested = false, denySignals = false) {
+  const directory = await mkdtemp(join(tmpdir(), 'lob-command-test-'));
+  const fixture = join(directory, 'owned.mjs');
+  const pidFile = join(directory, 'pids');
+  const ready = join(directory, 'ready');
+  await writeFile(fixture, `
+import { spawn } from 'node:child_process';
+import { appendFileSync, writeFileSync } from 'node:fs';
+const role = process.argv[2];
+appendFileSync(${JSON.stringify(pidFile)}, process.pid + '\\n');
+if (role === 'launcher' || (${nested} && role === 'descendant')) {
+  const child = spawn(process.execPath, [${JSON.stringify(fixture)}, role === 'launcher' ? 'descendant' : 'grandchild'], {
+    detached: true, stdio: ${pipes ? "['ignore', 1, 2]" : "'ignore'"}
+  });
+  child.unref();
+}
+if (role === ${JSON.stringify(nested ? 'grandchild' : 'descendant')}) writeFileSync(${JSON.stringify(ready)}, 'ready');
+if (role === 'launcher' && ${JSON.stringify(mode)} === 'natural') setTimeout(() => { console.log('launcher-done'); process.exit(0); }, 180);
+setInterval(() => {}, 1000);
+setTimeout(() => process.exit(0), 5000);
+`);
+  const unrelated = spawn(commandNode, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore', env: commandEnvironment });
+  const unrelatedClosed = new Promise<void>((done) => unrelated.once('close', () => done()));
+  const controller = new AbortController();
+  const originalKill = process.kill;
+  if (denySignals) process.kill = () => { throw Object.assign(new Error('Synthetic permission denial.'), { code: 'EPERM' }); };
+  const started = performance.now();
+  const invocation = command({ executable: { file: commandNode, args: [] }, args: [fixture, 'launcher'],
+    cwd: directory, env: commandEnvironment, signal: controller.signal, timeoutMs: mode === 'timeout' ? 250 : 5000 });
+  const lateAbort = mode === 'timeout' && denySignals ? setTimeout(() => controller.abort(), 350) : undefined;
+  let pids: number[] = [];
+  try {
+    if (mode === 'abort') {
+      await bounded((async () => {
+        const deadline = performance.now() + 900;
+        while (performance.now() < deadline) {
+          try { await readFile(ready); return; } catch { await delay(10); }
+        }
+        throw new Error('Descendants never became ready.');
+      })(), 1000);
+      controller.abort();
+    }
+    const result = await bounded(invocation, 4000);
+    const elapsed = performance.now() - started;
+    pids = (await readFile(pidFile, 'utf8')).trim().split('\n').map(Number);
+    assert.equal(pids.length, nested ? 3 : 2, 'the fixture must create every descendant');
+    assert.equal(succeeded(result), false);
+    assert.equal(result.termination.kind, mode === 'timeout' ? 'timeout' : 'signal');
+    if (denySignals) {
+      assert.ok(result.termination.reason.includes('cleanup was not confirmed'));
+      assert.ok(pids.some((pid) => commandProcess(pid)?.state.startsWith('S')), 'the denied signal must leave a live descendant for fixture cleanup');
+    }
+    if (mode === 'natural') assert.equal(result.stdout, 'launcher-done\n');
+    assert.ok(elapsed < 4000, `cleanup took ${elapsed} ms`);
+    for (const pid of denySignals ? [] : pids) {
+      const observed = commandProcess(pid);
+      assert.ok(observed === null || !observed.args.includes(fixture) || observed.state.startsWith('Z'), `owned process ${pid} survived command()`);
+    }
+    assert.equal(unrelated.exitCode, null);
+    assert.equal(unrelated.signalCode, null);
+    assert.ok(unrelated.pid && commandProcess(unrelated.pid), 'unrelated process must survive cleanup');
+  } finally {
+    clearTimeout(lateAbort);
+    process.kill = originalKill;
+    controller.abort();
+    try { pids = (await readFile(pidFile, 'utf8')).trim().split('\n').map(Number); } catch {}
+    for (const pid of pids.reverse()) {
+      const observed = commandProcess(pid);
+      if (observed?.args.includes(fixture)) {
+        try { process.kill(observed.group === pid ? -pid : pid, 'SIGKILL'); } catch {}
+      }
+    }
+    unrelated.kill('SIGKILL');
+    await bounded(unrelatedClosed, 1000);
+    await bounded(invocation, 4000);
+    await bounded((async () => {
+      const deadline = performance.now() + 900;
+      while (performance.now() < deadline) {
+        if (pids.every((pid) => { const row = commandProcess(pid); return row === null || !row.args.includes(fixture) || row.state.startsWith('Z'); })) return;
+        await delay(10);
+      }
+      throw new Error('Fixture processes survived cleanup.');
+    })(), 1000);
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+test('command timeout drains retained pipes and stops a detached descendant', async () => {
+  await commandDescendants('timeout', true);
+});
+
+test('command cancellation stops detached descendant groups and preserves cancellation', async () => {
+  await commandDescendants('abort', true, true);
+});
+
+test('command unconfirmed cleanup returns within its drain bound and cannot succeed', async () => {
+  await commandDescendants('natural', true, false, true);
+});
+
+test('command retains the first timeout when cancellation arrives during unconfirmed cleanup', async () => {
+  await commandDescendants('timeout', true, false, true);
+});
+
+for (const pipes of [true, false]) {
+  test(`command natural exit cleans detached descendants with ${pipes ? 'retained' : 'ignored'} stdio and cannot succeed`, async () => {
+    await commandDescendants('natural', pipes);
+  });
+}
+
+test('command preserves stdin, arguments, cwd, environment, output, and ordinary exit codes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'lob-command-normal-'));
+  try {
+    for (const code of [0, 7]) {
+      const result = await command({ executable: { file: commandNode, args: ['-e'] }, args: [
+        `let input = ''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => input += chunk);
+        process.stdin.on('end', () => { console.log(JSON.stringify({ input, args: process.argv.slice(1), cwd: process.cwd(), value: process.env.COMMAND_VALUE })); process.stderr.write('ordinary stderr'); process.exitCode = ${code}; });`,
+        'argument with spaces',
+      ], cwd: directory, env: { ...commandEnvironment, COMMAND_VALUE: 'synthetic' }, timeoutMs: 2000, input: 'hello\n世界' });
+      assert.deepEqual(result.termination, { kind: 'exited', code });
+      assert.equal(succeeded(result), code === 0);
+      assert.deepEqual(JSON.parse(result.stdout), { input: 'hello\n世界', args: ['argument with spaces'], cwd: await realpath(directory), value: 'synthetic' });
+      assert.equal(result.stderr, 'ordinary stderr');
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+test('command executable failure settles without becoming a timeout', async () => {
+  const result = await bounded(command({ executable: { file: '/nonexistent/lob-command-fixture', args: [] }, args: [],
+    cwd: tmpdir(), env: commandEnvironment, timeoutMs: 2000 }), 1000);
+  assert.equal(result.termination.kind, 'not-started');
+  assert.equal(succeeded(result), false);
+});
+
+test('command reports an actual signal exit as unsuccessful', async () => {
+  const result = await command({ executable: { file: commandNode, args: [] }, args: ['-e', "process.kill(process.pid, 'SIGTERM')"],
+    cwd: tmpdir(), env: commandEnvironment, timeoutMs: 2000 });
+  assert.equal(result.termination.kind, 'signal');
+  assert.equal(succeeded(result), false);
+});
+
+test('command already aborted or expired does not launch the executable', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'lob-command-not-started-'));
+  const marker = join(directory, 'started');
+  try {
+    for (const cancelled of [true, false]) {
+      const controller = new AbortController();
+      if (cancelled) controller.abort();
+      const result = await command({ executable: { file: commandNode, args: [] },
+        args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'started')`],
+        cwd: directory, env: commandEnvironment, signal: controller.signal, timeoutMs: cancelled ? 2000 : 0 });
+      assert.equal(result.termination.kind, cancelled ? 'signal' : 'timeout');
+      assert.equal(succeeded(result), false);
+      await assert.rejects(readFile(marker), { code: 'ENOENT' });
+    }
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
 const installedBuild = '00000000-0000-4000-8000-000000000001';
 const nativeBuild = '00000000-0000-4000-8000-000000000003';
 const sessionId = '00000000-0000-4000-8000-000000000002';
@@ -31,7 +251,7 @@ const fakeAuth = {
   last_refresh: '2026-10-26T00:00:00.000Z',
 };
 
-test('isolated simulator config resolves without app plugins or installed dependencies', async () => {
+test('isolated simulator config resolves without app plugins or installed dependencies', { timeout: 15_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'lob-simulator-config-'));
   try {
     await copyFile(resolve('app.json'), join(directory, 'app.json'));
@@ -177,10 +397,12 @@ test('strict verdict rejects prefixes, duplicate checks, extra keys, and disagre
   assert.throws(() => verdictSchema.parse({ state: 'FAIL', checks }));
   assert.throws(() => verdictSchema.parse({ state: 'PASS', checks: [checks[0], checks[0], checks[2]] }));
   assert.throws(() => verdictSchema.parse({ state: 'PASS', checks, extra: true }));
+  assert.throws(() => verdictSchema.parse({ state: 'PASS', checks: checks.map((check) => ({ ...check, screenshot: 'evidence-output-placeholder.png' })) }));
+  assert.throws(() => verdictSchema.parse({ state: 'PASS', checks: checks.map((check) => ({ ...check, screenshot: 'scores.png' })) }));
   assert.throws(() => targetSchema.parse({ source: { sha: 'a'.repeat(40) } }));
 });
 
-test('complete local fake-executable run requires decodable evidence and persists refreshed credentials', async () => {
+test('complete local fake-executable run requires decodable evidence and persists refreshed credentials', { timeout: 15_000 }, async () => {
   await scenario('pass', async ({ options, root, log, seed }) => {
     const result = await executeCheck(options);
     assert.equal(result.state, 'PASS');
@@ -203,7 +425,7 @@ test('complete local fake-executable run requires decodable evidence and persist
 });
 
 for (const kind of ['malformed-verdict', 'missing-screenshot', 'missing-recording', 'corrupt-recording', 'timeout', 'exit-nonzero', 'auth-write-back-failed', 'cleanup-unconfirmed', 'wrong-bundle', 'partial-start']) {
-  test(`${kind} remains INCONCLUSIVE and stops only the owned simulator`, async () => {
+  test(`${kind} remains INCONCLUSIVE and stops only the owned simulator`, { timeout: 15_000 }, async () => {
     await scenario(kind, async ({ options, log }) => {
       const result = await executeCheck(options);
       assert.equal(result.state, 'INCONCLUSIVE');
@@ -221,7 +443,7 @@ for (const kind of ['malformed-verdict', 'missing-screenshot', 'missing-recordin
 }
 
 for (const kind of ['untrusted-repo', 'build-sha-mismatch', 'source-sha-mismatch', 'fork-pr', 'pr-head-mismatch', 'target-without-baseline']) {
-  test(`${kind} fails before credentials or simulator startup`, async () => {
+  test(`${kind} fails before credentials or simulator startup`, { timeout: 15_000 }, async () => {
     await scenario(kind, async ({ options, log }) => {
       if (kind === 'source-sha-mismatch') options.env.AGENT_SOURCE_SHA = 'b'.repeat(40);
       if (kind === 'untrusted-repo') options.env.AGENT_TRUSTED_REPOSITORY = 'another/repository';
@@ -237,21 +459,21 @@ for (const kind of ['untrusted-repo', 'build-sha-mismatch', 'source-sha-mismatch
   });
 }
 
-test('the explicitly approved public repository passes the same trusted source checks', async () => {
+test('the explicitly approved public repository passes the same trusted source checks', { timeout: 15_000 }, async () => {
   await scenario('public-repo', async ({ options }) => {
     const result = await executeCheck(options);
     assert.equal(result.state, 'PASS');
   });
 });
 
-test('an observed acceptance failure with full evidence is FAIL', async () => {
+test('an observed acceptance failure with full evidence is FAIL', { timeout: 15_000 }, async () => {
   await scenario('observed-fail', async ({ options }) => {
     const result = await executeCheck(options);
     assert.equal(result.state, 'FAIL');
   });
 });
 
-test('a repack keeps native source identity distinct from the embedded candidate and installed build', async () => {
+test('a repack keeps native source identity distinct from the embedded candidate and installed build', { timeout: 15_000 }, async () => {
   await scenario('repack', async ({ options }) => {
     options.env.AGENT_NATIVE_SOURCE_BUILD_ID = nativeBuild;
     options.env.AGENT_NATIVE_SOURCE_SHA = 'c'.repeat(40);
@@ -264,7 +486,7 @@ test('a repack keeps native source identity distinct from the embedded candidate
   });
 });
 
-test('evidence admission rejects symlink escapes and stale files', async () => {
+test('evidence admission rejects symlink escapes and stale files', { timeout: 15_000 }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'lob-file-test-'));
   try {
     await symlink(join(mediaDirectory, 'screen.png'), join(directory, 'escape.png'));
@@ -279,7 +501,7 @@ for (const [kind, expected] of [
   ['triage-missing-screenshot', 'INCONCLUSIVE'], ['triage-malformed-verdict', 'INCONCLUSIVE'],
   ['triage-unknown-issue', 'INCONCLUSIVE'],
 ]) {
-  test(`${kind} uses actual admitted media and the independent issue contract`, async () => {
+  test(`${kind} uses actual admitted media and the independent issue contract`, { timeout: 15_000 }, async () => {
     await scenario(kind, async ({ options, log }) => {
       options.env.AGENT_TASK = 'triage';
       options.env.AGENT_ISSUE_NUMBER = '7';
@@ -312,7 +534,7 @@ for (const [kind, expected] of [
 }
 
 for (const [kind, expected] of [['acceptance', 'PASS'], ['acceptance-seeded', 'FAIL'], ['acceptance-issue-edited', 'INCONCLUSIVE']]) {
-  test(`PR ${kind} selects frozen original criteria independently of ordinary baseline CI`, async () => {
+  test(`PR ${kind} selects frozen original criteria independently of ordinary baseline CI`, { timeout: 15_000 }, async () => {
     await scenario(kind, async ({ options }) => {
       options.env.AGENT_PR_NUMBER = '8';
       const result = await executeCheck(options);
@@ -327,7 +549,7 @@ for (const [kind, expected] of [['acceptance', 'PASS'], ['acceptance-seeded', 'F
   });
 }
 
-test('manual acceptance requires original issue and criteria digests', async () => {
+test('manual acceptance requires original issue and criteria digests', { timeout: 15_000 }, async () => {
   await scenario('acceptance', async ({ options }) => {
     options.env.AGENT_TASK = 'acceptance'; options.env.AGENT_ISSUE_NUMBER = '7';
     const result = await executeCheck(options);

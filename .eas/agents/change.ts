@@ -78,7 +78,7 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     executable: Command; args: string[]; cwd: string; env?: NodeJS.ProcessEnv; timeoutMs?: number;
   }) => {
     const result = await command({ executable, args, cwd, env, timeoutMs, signal: options.signal });
-    if (!succeeded(result)) throw new Error('Controller command failed, was cancelled, or exceeded its deadline. No publication is safe.');
+    if (!succeeded(result)) throw new Error(`Controller ${executable.file.split('/').at(-1)} ${args[0] ?? ''} did not complete: ${JSON.stringify(result.termination)}. No publication is safe.`);
     return result.stdout.trim();
   };
   try {

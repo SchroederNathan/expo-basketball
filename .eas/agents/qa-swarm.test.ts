@@ -73,10 +73,12 @@ async function scenario(mode: string, inspect: (context: { options: SwarmOptions
   finally {
     api.closeAllConnections();
     await new Promise<void>((done) => api.close(() => done()));
-    for (const event of (await events()).filter((event) => event.tool === 'server' || event.tool === 'descendant')) {
-      assert.throws(() => process.kill(event.pid!, 0), 'No owned process may survive the controller.');
-    }
+    const survivors = (await events()).filter((event) => event.tool === 'server' || event.tool === 'descendant').filter((event) => {
+      try { process.kill(event.pid!, 0); return true; } catch { return false; }
+    });
+    for (const event of survivors) { try { process.kill(event.pid!, 'SIGKILL'); } catch {} }
     await rm(root, { recursive: true, force: true });
+    assert.deepEqual(survivors, [], 'No owned process may survive the controller.');
   }
 }
 
@@ -86,7 +88,7 @@ async function publicText(root: string): Promise<string> {
     : /\.(json|md)$/.test(entry.name) ? readFile(join(root, entry.name), 'utf8') : ''))).join('\n');
 }
 
-test('three real subprocess lanes share one server and auth home with distinct owned sessions', async () => {
+test('three real subprocess lanes share one server and auth home with distinct owned sessions', { timeout: 15_000 }, async () => {
   await scenario('normal', async ({ options, events }) => {
     const result = await executeSwarm(options);
     assert.equal(result.state, 'PASS');
@@ -127,7 +129,7 @@ test('three real subprocess lanes share one server and auth home with distinct o
   });
 });
 
-test('warm repack keeps native source and installed identities separate', async () => {
+test('warm repack keeps native source and installed identities separate', { timeout: 15_000 }, async () => {
   await scenario('normal', async ({ options }) => {
     options.env.AGENT_NATIVE_SOURCE_BUILD_ID = nativeBuild;
     options.env.AGENT_NATIVE_SOURCE_SHA = 'c'.repeat(40);
@@ -138,7 +140,7 @@ test('warm repack keeps native source and installed identities separate', async 
   });
 });
 
-test('an observed acceptance failure completes all lanes and preserves FAIL', async () => {
+test('an observed acceptance failure completes all lanes and preserves FAIL', { timeout: 15_000 }, async () => {
   await scenario('observed-fail', async ({ options, events }) => {
     const result = await executeSwarm(options);
     assert.equal(result.state, 'FAIL');
@@ -148,8 +150,8 @@ test('an observed acceptance failure completes all lanes and preserves FAIL', as
 });
 
 for (const mode of ['malformed', 'failed-turn', 'wrong-lane', 'missing-turn', 'missing-screenshot', 'missing-recording',
-  'partial-start', 'wrong-bundle', 'cleanup-failed', 'auth-final-failed', 'duplicate-session', 'exit-mid-turn']) {
-  test(`${mode} fails closed and every owned simulator receives cleanup`, async () => {
+  'partial-start', 'wrong-bundle', 'cleanup-failed', 'auth-final-failed', 'duplicate-session', 'exit-mid-turn', 'shutdown-exit-7', 'shutdown-signal', 'detached', 'detached-pipe']) {
+  test(`${mode} fails closed and every owned simulator receives cleanup`, { timeout: 15_000 }, async () => {
     await scenario(mode, async ({ options, events }) => {
       const result = await executeSwarm(options);
       assert.equal(result.state, 'INCONCLUSIVE');
@@ -165,7 +167,7 @@ for (const mode of ['malformed', 'failed-turn', 'wrong-lane', 'missing-turn', 'm
 }
 
 for (const mode of ['auth-preflight-failed', 'wrong-build']) {
-  test(`${mode} prevents sessions and model turns`, async () => {
+  test(`${mode} prevents sessions and model turns`, { timeout: 15_000 }, async () => {
     await scenario(mode, async ({ options, events }) => {
       assert.equal((await executeSwarm(options)).state, 'INCONCLUSIVE');
       assert.ok(!(await events()).some((event) => event.args?.[0] === 'simulator:start' || event.method === 'turn/start'));
@@ -173,7 +175,7 @@ for (const mode of ['auth-preflight-failed', 'wrong-build']) {
   });
 }
 
-test('cancellation collects lane failures, stops all sessions, and persists auth', async () => {
+test('cancellation collects lane failures, stops all sessions, and persists auth', { timeout: 15_000 }, async () => {
   await scenario('cancel', async ({ options, events, abort }) => {
     const timer = setInterval(() => { void events().then((calls) => {
       if (calls.filter((event) => event.method === 'turn/start').length === 3) abort();
@@ -194,7 +196,7 @@ test('lane verdict rejects extra fields, other checks, and a foreign screenshot'
     { ...verdict, state: 'PASS: yes' }, { ...verdict, detail: '' }]) assert.equal(laneVerdictSchema.safeParse(invalid).success, false);
 });
 
-test('the parent probe validates shell-written environment receipts and publishes no marker values', async () => {
+test('the parent probe validates shell-written environment receipts and publishes no marker values', { timeout: 15_000 }, async () => {
   await scenario('probe', async ({ options, root }) => {
     const output = join(root, 'probe-receipt.json');
     const result = await probe({ env: options.env, cwd: options.cwd, output, signal: options.signal,
@@ -206,5 +208,60 @@ test('the parent probe validates shell-written environment receipts and publishe
     assert.ok(!text.includes('synthetic-'));
     assert.ok(!text.includes('"marker"'));
     assert.ok(!text.includes('"cwd"'));
+  });
+});
+
+test('a truncated faststart MP4 cannot satisfy the recording evidence gate', { timeout: 15_000 }, async () => {
+  await scenario('normal', async ({ options, root }) => {
+    const full = join(root, 'full.mp4');
+    execFileSync('ffmpeg', ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc=size=200x300:rate=25', '-t', '2',
+      '-c:v', 'mpeg4', '-q:v', '2', '-movflags', '+faststart', full]);
+    const bytes = await readFile(full);
+    const truncated = join(root, 'clip.mp4');
+    await writeFile(truncated, bytes.subarray(0, Math.floor(bytes.length * 0.6)));
+    execFileSync('ffmpeg', ['-v', 'error', '-xerror', '-i', truncated, '-frames:v', '1', '-f', 'null', '-'], { stdio: 'pipe' });
+    assert.throws(() => execFileSync('ffmpeg', ['-v', 'error', '-xerror', '-i', truncated, '-f', 'null', '-'], { stdio: 'pipe' }));
+    await copyFile(join(mediaDirectory, 'screen.png'), join(root, 'screen.png'));
+    const config = join(root, 'config.json');
+    await writeFile(config, JSON.stringify({ ...JSON.parse(await readFile(config, 'utf8')), mediaDirectory: root }));
+    const result = await executeSwarm(options);
+    assert.equal(result.state, 'INCONCLUSIVE');
+    assert.ok(result.lanes.every((lane) => lane.state === 'INCONCLUSIVE' && lane.recording === null));
+    assert.ok(result.lanes.every((lane) => lane.cleanup.state === 'stopped'));
+  });
+});
+
+for (const mode of ['probe-exit-7', 'probe-signal']) {
+  test(`${mode} cannot certify the parent probe`, { timeout: 15_000 }, async () => {
+    await scenario(mode, async ({ options, root }) => {
+      const result = await probe({ env: options.env, cwd: options.cwd, output: join(root, 'probe.json'), signal: options.signal,
+        codex: options.executables!.codex, eas: options.executables!.eas, timeoutMs: 6000 });
+      assert.ok(result.lanes.every((lane) => lane.environmentVerified));
+      assert.equal(result.state, 'INCONCLUSIVE');
+      assert.equal(result.serverStop?.healthy, false);
+      assert.equal(result.authPersisted, true);
+    });
+  });
+}
+
+test('a recording decode deadline fails closed and still cleans all simulators', { timeout: 15_000 }, async () => {
+  await scenario('normal', async ({ options, root, events }) => {
+    const decoder = join(root, 'decoder.mjs');
+    await writeFile(decoder, `import { spawnSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
+const args = process.argv.slice(2);
+if (args.includes('-frames:v')) {
+  process.exit(spawnSync('ffmpeg', args, { stdio: 'inherit' }).status ?? 1);
+}
+appendFileSync(${JSON.stringify(join(root, 'log.jsonl'))}, JSON.stringify({ tool: 'descendant', pid: process.pid }) + '\\n');
+setInterval(() => {}, 1000);
+`);
+    options.executables!.ffmpeg = { file: process.execPath, args: [decoder] };
+    options.limits!.mediaMs = 500;
+    const result = await executeSwarm(options);
+    assert.equal(result.state, 'INCONCLUSIVE');
+    assert.ok(result.lanes.every((lane) => lane.recording === null && lane.cleanup.state === 'stopped'));
+    assert.equal((await events()).filter((event) => event.tool === 'descendant').length, 3);
+    assert.equal((await events()).filter((event) => event.args?.[0] === 'env:update').length, 2);
   });
 });

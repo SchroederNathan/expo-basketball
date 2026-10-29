@@ -1,7 +1,7 @@
 # Run the Lob agent workflows
 
 Agentic CI, Bug triage, and Issue to PR have executable manual workflows for the PrizePicks demonstration. QA Swarm remains held until the parent verifies the authentication topology. The parent owns cloud rehearsal and real credential provisioning.
-Local tests and EAS YAML validation do not establish cloud E2E success.
+The [manual baseline Agentic CI rehearsal](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a185ea-35e7-7406-93dc-19648335a00e) passed with real device evidence, exact candidate identity, persisted auth, and independently confirmed session stop. The issue, PR-event, and QA paths still need their own cloud proofs. Local tests and EAS YAML validation do not establish those results.
 
 The repository remains public at `SchroederNathan/expo-basketball`, as explicitly approved by the operator for subscription authentication. OpenAI's [advanced CI auth guide](https://learn.chatgpt.com/docs/auth/ci-cd-auth) recommends trusted private automation. This workflow retains the operator's public repository choice. Only reviewed same-repository branches are trusted. Removing tokens from the child environment is hygiene. Repository code and the agent run on the same worker and do not form a hostile-code security boundary.
 
@@ -23,7 +23,7 @@ Set these project environment variables in the preview environment before the fi
 | `AGENT_GITHUB_WRITE_TOKEN` | Required for triage and Issue to PR, secret. A repository-scoped fine-grained personal access token with Contents, Issues, and Pull requests read/write, plus default Metadata read. No Actions, Workflows, administration, organization, store, or production permissions. The parent provisions it. |
 | `AGENT_GITHUB_READ_TOKEN` | Optional repository-scoped read token, secret. Public GitHub source checks work without it but can encounter anonymous rate limits. Ordinary Agentic CI needs no GitHub write token. |
 
-The built-in Developer `EXPO_TOKEN` starts and stops simulators on this account. No separate simulator token is required. Actual cloud probes rejected file-secret updates with both the built-in Developer and Release Manager job tokens. Subscription persistence therefore requires `AGENT_AUTH_WRITE_TOKEN`. Its write permission must succeed before Codex or a simulator starts. The native build and warm repack have completed; subscription execution and remote media export remain unverified.
+The built-in Developer `EXPO_TOKEN` starts and stops simulators on this account. No separate simulator token is required. Actual cloud probes rejected file-secret updates with both the built-in Developer and Release Manager job tokens. Subscription persistence therefore requires `AGENT_AUTH_WRITE_TOKEN`. Its write permission must succeed before Codex or a simulator starts. Native build, warm repack, subscription-authenticated baseline acceptance, and remote media export have completed. The persistence receipt does not establish that token rotation occurred.
 Do not put unrelated production credentials in this environment.
 
 ## Provision subscription auth
@@ -93,6 +93,8 @@ Each attempt writes `agent-output/public/<attempt UUID>/`. The EAS artifact cont
 `Target` is a strict Zod-derived check target with controller/source refs and SHAs, repository/PR identity, fixed iOS profile/runtime, fixture identity, criteria digest, built-or-repacked native identity, and an embedded candidate bundle.
 `Session` contains the owned EAS ID, private account session URL, attempt ID, and maximum-duration deadline. It contains no access token.
 `Result` separates PASS/FAIL with complete evidence from INCONCLUSIVE with a reason and partial evidence. It also records process termination, cleanup, auth persistence, and tool versions.
+
+Each controller command reserves up to 1.5 seconds for cleanup after exit, cancellation, or timeout. This includes a bounded one-second process inspection and time for signaling and pipe closure. Forced or unconfirmed cleanup cannot produce a successful command. Process tracking covers observed descendants; it does not provide kernel containment for arbitrary daemonizing code.
 
 PASS requires all three acceptance checks, distinct valid screenshots, a controller-observed exact source/fixture/native-runtime/embedded identity, independently observed final scores, a decodable recording of at least one second, successful agent termination, confirmed scoped simulator stop, and persisted auth. Missing evidence, stale files, symlinks, mismatches, malformed JSON, timeouts, or unconfirmed cleanup remain INCONCLUSIVE. An observed acceptance failure with the same evidence requirements is FAIL. Agent exit zero or a PASS sentence alone is insufficient.
 

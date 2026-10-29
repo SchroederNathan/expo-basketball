@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -11,15 +11,16 @@ import { command, safeEnvironment, succeeded, type Command } from './process';
 import { laneIds, lanePrompt, laneVerdictSchema, type LaneId, type LaneVerdict } from './qa-lanes';
 import { admitFile, buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema,
   type Cleanup, type FileRef, type Session, type Target } from './result';
-import { identityLabel, Simulator, verifyBuild } from './simulator';
+import { identityLabel, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
-const tools = { eas: { file: 'bunx', args: ['eas-cli@25.3.0'] }, codex: codexCommand,
+const tools: Record<'eas' | 'codex' | 'device' | 'ffprobe' | 'ffmpeg', Command> = {
+  eas: { file: 'bunx', args: ['eas-cli@25.3.0'] }, codex: codexCommand,
   device: { file: 'bunx', args: ['agent-device@0.21.33'] }, ffprobe: { file: 'ffprobe', args: [] },
-  ffmpeg: { file: 'ffmpeg', args: [] } } satisfies Record<string, Command>;
+  ffmpeg: { file: 'ffmpeg', args: [] } };
 const deadlines = { startupMs: 240_000, agentMs: 900_000, cleanupMs: 120_000,
   deviceMs: 120_000, authMs: 60_000, requestMs: 60_000, stopMs: 10_000 };
 export type SwarmOptions = { cwd: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal;
-  executables?: typeof tools; limits?: typeof deadlines; githubApiBase?: string };
+  executables?: typeof tools; limits?: typeof deadlines & { mediaMs?: number }; githubApiBase?: string };
 type Lane = { id: LaneId; attemptId: string; directory: string; evidenceDirectory: string; publicDirectory: string;
   simulator: Simulator; env: NodeJS.ProcessEnv | null; session: Session | null; threadId: string | null;
   turn: TurnReceipt | null; verdict: LaneVerdict | null; identity: FileRef | null; recording: FileRef | null;
@@ -41,15 +42,17 @@ export async function qaPreflight(options: Pick<SwarmOptions, 'env' | 'cwd' | 'g
 async function decodeMedia(file: string, kind: 'png' | 'mp4', options: SwarmOptions, cwd: string) {
   const executables = options.executables ?? tools;
   const env = safeEnvironment(options.env);
-  const probe = await command({ executable: executables.ffprobe, cwd, env, timeoutMs: 30_000,
+  const deadline = Date.now() + (options.limits?.mediaMs ?? 30_000);
+  const probe = await command({ executable: executables.ffprobe, cwd, env, timeoutMs: Math.max(1, deadline - Date.now()),
     args: ['-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height', '-of', 'json', file] });
   if (!succeeded(probe)) throw new Error('Evidence media probe failed.');
   const media = z.object({ streams: z.array(z.object({ codec_type: z.string(), width: z.number().optional(), height: z.number().optional() })),
     format: z.object({ duration: z.string().optional() }) }).parse(JSON.parse(probe.stdout));
   if (!media.streams.some((s) => s.codec_type === 'video' && (s.width ?? 0) >= 100 && (s.height ?? 0) >= 100) ||
     (kind === 'mp4' && !(Number(media.format.duration) >= 1))) throw new Error('Evidence has no usable frames.');
-  const decoded = await command({ executable: executables.ffmpeg, cwd, env, timeoutMs: 30_000,
-    args: ['-v', 'error', '-xerror', '-i', file, '-frames:v', '1', '-f', 'null', '-'] });
+  if (Date.now() >= deadline) throw new Error('Evidence validation timed out.');
+  const decoded = await command({ executable: executables.ffmpeg, cwd, env, timeoutMs: deadline - Date.now(),
+    args: ['-v', 'error', '-xerror', '-i', file, ...(kind === 'png' ? ['-frames:v', '1'] : []), '-f', 'null', '-'] });
   if (!succeeded(decoded)) throw new Error('Evidence cannot be decoded.');
 }
 
@@ -124,8 +127,7 @@ export async function executeSwarm(options: SwarmOptions) {
       await mkdir(evidenceDirectory, { recursive: true, mode: 0o700 });
       await mkdir(lanePublic, { mode: 0o700 });
       await mkdir(join(directory, 'home'), { mode: 0o700 });
-      await copyFile(join(options.cwd, 'app.json'), join(directory, 'app.json'));
-      await writeFile(join(directory, 'package.json'), '{"name":"lob-qa-device","private":true}');
+      await writeSimulatorProject(options.cwd, directory);
       lanes.push({ id, attemptId: laneAttempt, directory, evidenceDirectory, publicDirectory: lanePublic,
         simulator: new Simulator({ attemptId: laneAttempt, cwd: directory, env: controllerEnv, eas: executables.eas,
           startupMs: limits.startupMs, cleanupMs: limits.cleanupMs }),

@@ -55,6 +55,10 @@ An INCONCLUSIVE result is useful to show. Explain its concrete cause and the evi
 
 ## Current evidence
 
-Native cold build and warm repack have succeeded. A separate manual remote session confirmed the seeded app journeys, real media export, and scoped cleanup. Automated Codex acceptance, GitHub event dispatch/publication, and the three-session swarm still require their cloud receipts. Update this section after rehearsal, before using the talk as a working-demo claim.
+The [manual baseline Agentic CI run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a185ea-35e7-7406-93dc-19648335a00e) passed. Independent verification checked exact source and installed artifact identity, all three baseline journeys, five PNGs, complete recording decode, successful process termination, the persisted-auth receipt, and scoped STOPPED. This one workflow took about 7 minutes 16 seconds, including native lookup and repack. That is one observed run, not a completion-time guarantee.
+
+The original recording contains one backwards timestamp jump. Its frames decode and contain the required screens, but smooth playback still needs a separate check before using it in the presentation. Keep the original evidence unchanged.
+
+Triage, coding PR/publication, repaired acceptance, GitHub event dispatch, and the three-session swarm still require their cloud receipts. Update this section as those rehearsals finish.
 
 [Draft documentation feedback](research/agentic-workflows-docs-feedback.md) records the issues and recommendations found during implementation.

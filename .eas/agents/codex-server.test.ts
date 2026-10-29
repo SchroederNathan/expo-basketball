@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { after, test } from 'node:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -47,6 +48,7 @@ for (const mode of ['normal', 'fragmented', 'early-notifications']) {
       const log = await readFile(join(root, 'log.jsonl'), 'utf8');
       assert.equal(log.split('\n').filter((line) => line.includes('"tool":"server"')).length, 1);
       await assert.rejects(turn(server, threads[0]!));
+      assert.deepEqual(await server.close(), { state: 'stopped', forced: false, healthy: true, exit: { code: 0, signal: null } });
     });
   });
 }
@@ -84,4 +86,62 @@ test('a process exit during initialization rejects pending requests', async () =
 
 test('duplicate thread identities are rejected', async () => {
   await assert.rejects(scenario('duplicate-thread', async () => assert.fail('Should not start turns.')));
+});
+
+for (const mode of ['shutdown-exit-7', 'shutdown-signal']) {
+  test(`${mode} cannot certify a healthy server`, async () => {
+    await scenario(mode, async (server, threads) => {
+      await Promise.all(threads.map((threadId) => turn(server, threadId)));
+      const stop = await server.close();
+      assert.equal(stop.state, 'stopped');
+      assert.equal(stop.healthy, false);
+      assert.deepEqual(stop.exit, mode.endsWith('exit-7') ? { code: 7, signal: null } : { code: null, signal: 'SIGTERM' });
+    });
+  });
+}
+
+for (const mode of ['detached', 'detached-pipe', 'detached-fatal', 'detached-pipe-fatal', 'ignore-eof']) {
+  test(`${mode} stops all owned groups within the shutdown bound`, async () => {
+    await scenario(mode, async (server, threads, root) => {
+      await Promise.allSettled(threads.map((threadId) => turn(server, threadId)));
+      const startedAt = Date.now();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const stop = await Promise.race([
+          server.close(),
+          new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Shutdown exceeded its bound.')), 2000); }),
+        ]);
+        assert.equal(stop.state, 'stopped');
+        assert.equal(stop.healthy, false);
+        const events = (await readFile(join(root, 'log.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+        for (const event of events.filter((event) => event.tool === 'descendant')) {
+          assert.throws(() => process.kill(event.pid, 0), 'Detached descendant must be gone when close resolves.');
+        }
+        assert.ok(Date.now() - startedAt < 2000);
+      } finally {
+        clearTimeout(timer);
+        const events = (await readFile(join(root, 'log.jsonl'), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+        for (const event of events.filter((event) => event.tool === 'descendant')) {
+          try { process.kill(event.pid, 'SIGKILL'); } catch {}
+        }
+      }
+    });
+  });
+}
+
+test('descendant cleanup leaves an unrelated process group running', async () => {
+  const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+    detached: true, stdio: 'ignore', env: { PATH: process.env.PATH },
+  });
+  const exited = new Promise<void>((done) => unrelated.once('close', () => done()));
+  try {
+    await scenario('detached-fatal', async (server, threads) => {
+      await Promise.allSettled(threads.map((threadId) => turn(server, threadId)));
+      assert.equal((await server.close()).state, 'stopped');
+      process.kill(unrelated.pid!, 0);
+    });
+  } finally {
+    if (unrelated.pid) { try { process.kill(-unrelated.pid, 'SIGKILL'); } catch {} }
+    await exited;
+  }
 });

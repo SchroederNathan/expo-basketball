@@ -1,0 +1,67 @@
+name: Codex subscription concurrency probe
+
+'on':
+  workflow_dispatch:
+    inputs:
+      repository:
+        type: string
+        required: true
+        description: Trusted owner/repository
+      target_ref:
+        type: string
+        required: true
+        description: Branch containing the audited workflow baseline
+      candidate_sha:
+        type: string
+        required: true
+        description: Exact candidate SHA, also required as workflow --ref
+
+permissions:
+  account:
+    role: developer
+
+concurrency:
+  group: codex-subscription-agentic-ios
+  queue: max
+  cancel_in_progress: false
+
+defaults:
+  tools:
+    bun: 1.2.22
+
+jobs:
+  probe:
+    name: Verify Linux cleanup and authenticated thread overlap
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+    steps:
+      - uses: eas/checkout
+        with:
+          fetch_depth: 0
+      - uses: eas/install_node_modules
+      - name: Verify trusted source
+        run: bun .eas/agents/qa-swarm.ts preflight
+      - name: Install media fixture tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - name: Verify pinned protocol and process cleanup on Linux
+        run: |
+          bunx @openai/codex@0.165.0 --version
+          bun test ./.eas/agents/codex-protocol.test.ts
+          bun test ./.eas/agents/runner.test.ts --test-name-pattern 'command '
+      - name: Verify subscription concurrency
+        run: |
+          mkdir -p agent-output/probe/public
+          bun .eas/agents/codex-probe.ts agent-output/probe/public/result.json
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: codex-concurrency-proof
+          path: agent-output/probe/public/**/*

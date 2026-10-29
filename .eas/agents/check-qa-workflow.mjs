@@ -25,3 +25,16 @@ for (const job of Object.values(jobs)) {
   for (const dependency of [...(job.needs ?? []), ...(job.after ?? [])]) assert.ok(jobs[dependency]);
 }
 process.stdout.write('QA uses the reviewed native graph, one serialized subscription job, and a fail-closed result gate.\n');
+
+const probe = Bun.YAML.parse(await readFile('.eas/workflows/codex-concurrency-probe.yml', 'utf8'));
+assert.deepEqual(probe.concurrency, workflow.concurrency);
+assert.equal(probe.permissions.account.role, 'developer');
+assert.equal(probe.defaults.tools.bun, '1.2.22');
+assert.deepEqual(Object.keys(probe.on), ['workflow_dispatch']);
+for (const input of ['repository', 'target_ref', 'candidate_sha']) assert.equal(probe.on.workflow_dispatch.inputs[input].required, true);
+assert.equal(probe.jobs.probe.environment, 'preview');
+assert.equal(probe.jobs.probe.env.AGENT_SOURCE_SHA, '${{ inputs.candidate_sha }}');
+assert.equal(probe.jobs.probe.steps.at(-1).if, '${{ always() }}');
+assert.equal(probe.jobs.probe.steps.at(-1).with.path, 'agent-output/probe/public/**/*');
+assert.ok(probe.jobs.probe.steps.some((step) => step.run === 'bun .eas/agents/qa-swarm.ts preflight'));
+assert.ok(probe.jobs.probe.steps.some((step) => step.run?.includes('bun .eas/agents/codex-probe.ts agent-output/probe/public/result.json')));

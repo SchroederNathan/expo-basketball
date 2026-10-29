@@ -16,6 +16,13 @@ const identity = `Lob demo prizepicks-v1 source=${c.sha} fixture=${c.fixtureDige
 if (tool === 'server') {
   log({ tool, pid: process.pid, envKeys: Object.keys(process.env), codexHome: process.env.CODEX_HOME });
   if (c.mode === 'server-exit') process.exit(3);
+  if (c.mode.includes('detached')) {
+    const descendant = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
+      detached: true, stdio: c.mode.includes('pipe') ? ['ignore', process.stdout, process.stderr] : 'ignore',
+    });
+    descendant.unref();
+    log({ tool: 'descendant', pid: descendant.pid });
+  }
   const threads = new Map();
   let count = 0;
   let refreshed = false;
@@ -67,7 +74,7 @@ if (tool === 'server') {
         item: { type: 'commandExecution', id: `command-${thread.id}`, aggregatedOutput: 'synthetic-secret-do-not-publish' } });
       event('item/completed', { threadId: thread.id, turnId: thread.turnId, completedAtMs: Date.now(),
         item: { type: 'agentMessage', id: `comment-${thread.id}`, phase: 'commentary', text: 'synthetic-secret-do-not-publish' } });
-      if (c.mode === 'interactive' && broken) { send({ id: 600, method: 'item/tool/requestUserInput', params: { threadId: thread.id } }); return; }
+      if (['interactive', 'detached-fatal', 'detached-pipe-fatal'].includes(c.mode) && broken) { send({ id: 600, method: 'item/tool/requestUserInput', params: { threadId: thread.id } }); return; }
       if (c.mode === 'mismatched-turn' && broken) { event('turn/completed', { threadId: thread.id, turn: { ...turn, id: 'wrong', status: 'completed' } }); return; }
       if (c.mode === 'exit-mid-turn' && broken) { setTimeout(() => process.exit(5), 30); return; }
       if (['timeout', 'missing-turn', 'cancel'].includes(c.mode) && broken) {
@@ -78,7 +85,7 @@ if (tool === 'server') {
         return;
       }
       const finish = () => {
-        if (c.mode === 'probe') {
+        if (c.mode.startsWith('probe')) {
           execFile(process.execPath, ['probe.mjs'], { cwd: thread.cwd, env: { ...thread.env, CODEX_THREAD_ID: thread.id } }, (error, stdout) => {
             complete(thread, error ? 'failed' : 'completed', stdout);
           });
@@ -104,7 +111,12 @@ if (tool === 'server') {
       event('turn/completed', { threadId: thread.id, turn: { id: thread.turnId, status: 'interrupted', items: [] } });
     }
   });
-  lines.on('close', () => process.exit(0));
+  lines.on('close', () => {
+    if (c.mode.endsWith('exit-7')) process.exit(7);
+    if (c.mode.endsWith('signal')) { process.kill(process.pid, 'SIGTERM'); return; }
+    if (c.mode === 'ignore-eof') { setInterval(() => {}, 1000); return; }
+    process.exit(0);
+  });
 } else if (tool === 'eas') {
   log({ tool, args, lane });
   if (args[0] === 'env:update') {

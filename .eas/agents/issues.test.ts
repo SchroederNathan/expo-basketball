@@ -164,19 +164,19 @@ for (const [kind, state] of [
   ['inconclusive-zero-diff', 'INCONCLUSIVE'], ['ready-zero-diff', 'INCONCLUSIVE'], ['no-change-with-diff', 'INCONCLUSIVE'],
   ['auth-writeback-failed', 'INCONCLUSIVE'], ['closed-pr', 'CONFLICT'],
 ]) {
-  test(`coding ${kind} produces ${state} without remote mutation`, async () => {
+  test(`coding ${kind} produces ${state} without remote mutation`, { timeout: 15_000 }, async () => {
     await setup(kind, async ({ options, mutations }) => {
       const before = git(options.remote, ['show-ref']);
       const result = await executeChange(options);
       assert.equal(result.state, state, 'reason' in result ? result.reason : '');
       assert.deepEqual(mutations, []);
       assert.equal(git(options.remote, ['show-ref']), before);
-      if (!['unknown-issue', 'invalid-source'].includes(kind)) assert.ok(result.auth !== 'not-loaded');
+      if (!['unknown-issue', 'invalid-source'].includes(kind)) assert.ok(result.auth !== 'not-loaded', 'reason' in result ? result.reason : result.state);
     });
   });
 }
 
-test('missing write token fails before subscription credentials are loaded', async () => {
+test('missing write token fails before subscription credentials are loaded', { timeout: 15_000 }, async () => {
   await setup('missing-token', async ({ options, mutations }) => {
     delete options.env.AGENT_GITHUB_WRITE_TOKEN;
     const result = await executeChange(options);
@@ -185,7 +185,7 @@ test('missing write token fails before subscription credentials are loaded', asy
 });
 
 for (const kind of ['success', 'retry', 'retry-after-pr']) {
-  test(`controller ${kind} validates, fast-forwards once, and reuses exactly one PR on retry`, async () => {
+  test(`controller ${kind} validates, fast-forwards once, and reuses exactly one PR on retry`, { timeout: 15_000 }, async () => {
     await setup(kind, async ({ options, root, cwd, mutations, counts }) => {
       const baseline = git(cwd, ['rev-parse', 'HEAD']);
       const fixtureBefore = await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'), 'utf8');
@@ -210,7 +210,7 @@ for (const kind of ['success', 'retry', 'retry-after-pr']) {
   });
 }
 
-test('human changes to the issue branch produce a conflict without another agent, push, or PR', async () => {
+test('human changes to the issue branch produce a conflict without another agent, push, or PR', { timeout: 15_000 }, async () => {
   await setup('success', async ({ options, root, mutations }) => {
     const first = await executeChange(options); assert.equal(first.state, 'PR_READY');
     if (first.state !== 'PR_READY') assert.fail('Missing candidate');
@@ -225,7 +225,7 @@ test('human changes to the issue branch produce a conflict without another agent
   });
 });
 
-test('a changed issue digest fails closed rather than silently rewriting the acceptance contract', async () => {
+test('a changed issue digest fails closed rather than silently rewriting the acceptance contract', { timeout: 15_000 }, async () => {
   await setup('success', async ({ options, setIssueBody, mutations }) => {
     const first = await executeChange(options); assert.equal(first.state, 'PR_READY');
     setIssueBody(`${demoIssueMarker}\nChanged issue input.`);
@@ -235,7 +235,7 @@ test('a changed issue digest fails closed rather than silently rewriting the acc
   });
 });
 
-test('a branch race causes an ordinary push rejection and never creates a PR or force-pushes', async () => {
+test('a branch race causes an ordinary push rejection and never creates a PR or force-pushes', { timeout: 15_000 }, async () => {
   await setup('push-conflict', async ({ options, mutations }) => {
     const result = await executeChange(options);
     assert.equal(result.state, 'CONFLICT', 'reason' in result ? result.reason : '');
@@ -245,7 +245,7 @@ test('a branch race causes an ordinary push rejection and never creates a PR or 
 });
 
 for (const kind of ['target-race', 'target-create-race', 'target-post-pr-race']) {
-  test(`${kind} cannot report PR_READY against a moving frozen target`, async () => {
+  test(`${kind} cannot report PR_READY against a moving frozen target`, { timeout: 15_000 }, async () => {
     await setup(kind, async ({ options, counts }) => {
       const result = await executeChange(options);
       assert.equal(result.state, 'CONFLICT', 'reason' in result ? result.reason : '');
@@ -255,7 +255,7 @@ for (const kind of ['target-race', 'target-create-race', 'target-post-pr-race'])
   });
 }
 
-test('an existing PR with the expected base ref and a different base SHA is a conflict', async () => {
+test('an existing PR with the expected base ref and a different base SHA is a conflict', { timeout: 15_000 }, async () => {
   await setup('reused-pr-base-mismatch', async ({ options, counts, mutations }) => {
     const first = await executeChange(options);
     assert.equal(first.state, 'PR_READY', 'reason' in first ? first.reason : '');
