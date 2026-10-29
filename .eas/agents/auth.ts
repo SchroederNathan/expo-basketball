@@ -6,7 +6,7 @@ import { command, succeeded, type Command } from './process';
 const subscriptionSchema = z.strictObject({
   auth_mode: z.literal('chatgpt'),
   OPENAI_API_KEY: z.null().optional(),
-  tokens: z.strictObject({
+  tokens: z.object({
     access_token: z.string().min(1), id_token: z.string().min(1),
     refresh_token: z.string().min(1), account_id: z.string().min(1).optional(),
   }),
