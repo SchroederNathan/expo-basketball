@@ -1,5 +1,25 @@
 # Device evidence comments
 
+## Verified demo reports
+
+Fresh Linux EAS runs on October 29, 2026 published these complete reports automatically:
+
+| Workflow | Embedded evidence | EAS run |
+| --- | --- | --- |
+| Agentic CI, PASS | [PR 4 screenshots and recording](https://github.com/SchroederNathan/expo-basketball/pull/4#issuecomment-6508708296) | [CI run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18987-5352-7b8b-ba09-394756dfa577) |
+| QA Swarm, all lanes PASS | [PR 4 lane screenshots and recordings](https://github.com/SchroederNathan/expo-basketball/pull/4#issuecomment-6508852844) | [QA run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18987-6860-7cd7-abf5-e7d2a3a548ee) |
+| Bug triage, REPLICATED | [Issue 3 reproduction evidence](https://github.com/SchroederNathan/expo-basketball/issues/3#issuecomment-6508987513) | [Triage run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18987-9972-723a-9704-4c531acdcb7f) |
+
+CI and QA tested repaired PR head `5d39bbd80d69bad7e0a3d68129507822b0c7fda6`. Triage tested seeded release source `8fed4ff140f919addf9dfdadc2d7cc96042e9141`. PR 4 remains open. The audit observed all 15 checks successful and no submitted reviews.
+
+The three canonical reports contain 21 screenshots, five original recordings, and five H.264 playback copies. Anonymous downloads matched all hashes, every recording fully decoded, and GitHub rendered the expected images and native video controls. All five owned simulator sessions independently reported STOPPED. Subscription persistence succeeded in every run. These fresh checks verified rendered HTML and media bytes; signed-out browser playback was separately exercised for the historical reports.
+
+Original timestamps contain duplicate and backward steps. The first observed fresh CI regression is 1.667 ms at frame 551. Edited playback preserves the decoded frames and normalizes timing, so it cannot establish elapsed task time. CI also created two recovery attachment comments that retain pending labels. The linked canonical CI report is complete and contains the verified recovered assets.
+
+The historical [original reproduction](https://github.com/SchroederNathan/expo-basketball/issues/3#issuecomment-6508352772) and [repaired triage](https://github.com/SchroederNathan/expo-basketball/issues/3#issuecomment-6508372744) remain available for the before-and-after presentation. Their comments explicitly identify their older source commits.
+
+## Publication contract
+
 CI, triage, and QA use one controller publisher after their cleanup and subscription finalizers. The observed `result.json` stays unchanged. A separate delivery receipt records verified asset URLs, hashes, the exact comment ID, the writer ID, and GitHub rendering signals.
 
 A PR destination or triage issue makes publication required. `status.json` reports `INCONCLUSIVE` when delivery is partial or unavailable and preserves the device verdict in `observed_state`. Manual checks and QA without a destination retain artifacts only. CI's existing bot comment links the new evidence comment. The publisher never edits the bot's comment, the PR body, or its original acceptance receipt.

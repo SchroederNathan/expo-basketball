@@ -1,6 +1,6 @@
 # PrizePicks presentation rehearsal
 
-Show one game-day bug becoming a reviewable, device-tested PR. All four workflows have real cloud evidence. The final CI and QA runs passed at `705a42333c551953d62cf9c54156c2e17b2363bf`. Earlier triage and coding receipts establish the original issue-to-fix path. The recording timing limitation remains explicit below. Production promotion remains a human decision outside this demo.
+Show one game-day bug becoming a reviewable, device-tested PR. All four workflows have real cloud evidence. The latest CI and QA runs passed at `5d39bbd80d69bad7e0a3d68129507822b0c7fda6` and automatically embedded screenshots and recordings in PR 4. Fresh triage reproduced the seeded bug and published evidence in issue 3. Start with the [verified embedded reports](rich-evidence.md#verified-demo-reports). Earlier triage and coding receipts establish the original issue-to-fix path. The recording timing limitation remains explicit below. Production promotion remains a human decision outside this demo.
 
 ## Thirty-minute agenda
 
@@ -56,7 +56,9 @@ Native fingerprint lookup selects a compatible build to repack. It does not impl
 
 An INCONCLUSIVE result is useful to show. Explain its concrete cause and the evidence still missing. A completed build, a zero exit code, or a manually verified app is not an automated device acceptance pass.
 
-## Current evidence
+## Earlier acceptance evidence
+
+The [latest publication rehearsal](rich-evidence.md#verified-demo-reports) supersedes the head snapshot below. This section retains the earlier acceptance audit and its exact recording observations.
 
 The final audit observed [PR 4](https://github.com/SchroederNathan/expo-basketball/pull/4) at `705a42333c551953d62cf9c54156c2e17b2363bf` on October 29, 2026 at 19:14 UTC. All 15 checks were SUCCESS. The PR was open, non-draft, and merge state CLEAN, with no submitted reviews. It remains open intentionally for the seeded demo. This is an observed snapshot, not an approval or merge instruction.
 
