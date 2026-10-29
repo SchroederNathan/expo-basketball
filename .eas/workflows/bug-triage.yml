@@ -48,8 +48,6 @@ jobs:
       criteria_sha256: ${{ steps.freeze.outputs.criteria_sha256 }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - id: freeze
         run: |
@@ -119,8 +117,6 @@ jobs:
       attempt_id: ${{ steps.check.outputs.attempt_id }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - name: Install media evidence tools
         run: |

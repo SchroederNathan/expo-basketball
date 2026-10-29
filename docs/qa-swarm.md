@@ -2,7 +2,7 @@
 
 QA Swarm checks one exact Lob iOS candidate through three concurrent Codex threads and three owned remote simulators. It uses the public `SchroederNathan/expo-basketball` repository and managed ChatGPT subscription file authentication. It has no API-key fallback.
 
-This implementation has local behavior tests and a successful EAS CLI 25.3.0 workflow validation. Authenticated Codex concurrency, remote app behavior, and cloud execution are **unverified**. Local subprocess fixtures do not establish demo readiness or a 30-minute cloud completion time.
+The [Linux concurrency probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) passed 16 protocol and process cleanup checks, then verified three authenticated overlapping threads with separate shell environments, a healthy server exit, and persisted auth. The three-session app journeys still need their own cloud evidence. Neither result establishes a 30-minute completion-time guarantee.
 
 ## Execution contract
 

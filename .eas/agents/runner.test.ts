@@ -5,6 +5,7 @@ import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } 
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
+import { pathToFileURL } from 'node:url';
 import { subscriptionConfig, validateSubscription } from './auth';
 import { publishTriage } from './github';
 import { demoIssueMarker, acceptanceMarker, acceptanceSchema, issueDigest } from './issue';
@@ -280,6 +281,9 @@ async function scenario(kind: string, inspect: (context: { options: CheckOptions
   git(['init', '-b', 'candidate']);
   git(['add', '.']);
   git(['-c', 'user.name=Runner test', '-c', 'user.email=runner@example.invalid', 'commit', '-m', 'Fixture baseline']);
+  const baselineSha = git(['rev-parse', 'HEAD']);
+  const shallowAcceptance = kind.startsWith('acceptance-shallow');
+  if (shallowAcceptance) git(['-c', 'user.name=Runner test', '-c', 'user.email=runner@example.invalid', 'commit', '--allow-empty', '-m', 'Candidate change']);
   const sha = git(['rev-parse', 'HEAD']);
   const fixtureDigest = digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json')));
   const log = join(root, 'commands.jsonl');
@@ -336,7 +340,7 @@ if (tool === 'eas') {
 `);
   const issueInput = { id: 123, node_id: 'I_demo', number: 7, state: 'open', title: 'Jordan label', body: demoIssueMarker+' Original Jordan label issue.',
     updated_at: '2026-10-28T00:00:00Z', html_url: 'https://github.com/trusted/lob-demo/issues/7', author_association: 'OWNER' } satisfies Parameters<typeof issueDigest>[0];
-  const receipt = acceptanceSchema.parse({ version: 1, repository: 'trusted/lob-demo', target: { ref: 'candidate', sha },
+  const receipt = acceptanceSchema.parse({ version: 1, repository: 'trusted/lob-demo', target: { ref: 'candidate', sha: kind === 'acceptance-shallow-forged' ? 'c'.repeat(40) : shallowAcceptance ? baselineSha : sha },
     issue: { number: 7, id: 123, nodeId: 'I_demo', sha256: issueDigest(issueInput) },
     criteriaSha256: digest(await readFile(join(cwd, 'demo/issues/player-label.md'))) });
   const comments: { id: number; body: string; html_url: string; user: { id: number } }[] = [];
@@ -358,7 +362,7 @@ if (tool === 'eas') {
     const payload = request.url?.includes('/branches/') ? { name: 'candidate', commit: { sha } }
       : request.url?.includes('/pulls/') ? { body: kind.startsWith('acceptance') ? acceptanceMarker(receipt) : '', state: 'open', draft: false, author_association: 'OWNER',
         head: { sha: kind === 'pr-head-mismatch' ? 'b'.repeat(40) : sha, ref: 'candidate', repo: kind === 'fork-pr' ? { ...repository, full_name: 'fork/lob-demo' } : repository },
-        base: { sha: kind === 'target-without-baseline' ? 'b'.repeat(40) : sha, ref: 'candidate', repo: repository } }
+        base: { sha: kind === 'target-without-baseline' ? 'b'.repeat(40) : shallowAcceptance ? baselineSha : sha, ref: 'candidate', repo: repository } }
       : repository;
     response.end(JSON.stringify(payload));
   });
@@ -371,12 +375,19 @@ if (tool === 'eas') {
     env: { PATH: process.env.PATH, HOME: root, CODEX_AUTH_JSON: seed, EXPO_TOKEN: 'synthetic-expo-token', AGENT_AUTH_WRITE_TOKEN: 'synthetic-write-token',
       AGENT_TRUSTED_AUTOMATION: 'enabled', AGENT_TRUSTED_REPOSITORY: 'trusted/lob-demo', AGENT_GITHUB_READ_TOKEN: 'synthetic-read-token',
       AGENT_REPOSITORY: 'trusted/lob-demo', AGENT_SOURCE_REF: 'candidate', AGENT_SOURCE_SHA: sha,
-      AGENT_WORKFLOW_BASELINE_SHA: sha, AGENT_BUILD_ID: installedBuild, AGENT_FINGERPRINT: 'a'.repeat(40) },
+      AGENT_WORKFLOW_BASELINE_SHA: shallowAcceptance ? baselineSha : sha, AGENT_BUILD_ID: installedBuild, AGENT_FINGERPRINT: 'a'.repeat(40) },
     githubApiBase: `http://127.0.0.1:${address.port}`,
     executables: { eas: executable('eas'), device: executable('device'), codex: executable('codex'),
       ffprobe: { file: 'ffprobe', args: [] }, ffmpeg: { file: 'ffmpeg', args: [] } },
     limits: { startupMs: 300, agentMs: 300, cleanupMs: 2000, deviceMs: 2000, authMs: 2000 },
   };
+  if (shallowAcceptance) {
+    const remote = join(root, 'remote.git');
+    git(['clone', '--bare', cwd, remote]);
+    const shallow = join(root, 'shallow');
+    execFileSync('git', ['clone', '--depth', '1', pathToFileURL(remote).href, shallow], { stdio: 'ignore' });
+    options.cwd = shallow;
+  }
   try { await inspect({ options, log, root, seed }); }
   finally { server.closeAllConnections(); await new Promise<void>((done) => server.close(() => done())); await rm(root, { recursive: true, force: true }); }
 }
@@ -544,6 +555,27 @@ for (const [kind, expected] of [['acceptance', 'PASS'], ['acceptance-seeded', 'F
         assert.equal(result.target?.kind, 'acceptance');
         assert.equal(result.target?.criteria.path, 'demo/issues/player-label.md');
         assert.ok(result.state !== 'INCONCLUSIVE' && result.verdict.checks.some((check) => check.id === 'historical-points'));
+      }
+    });
+  });
+}
+
+for (const kind of ['acceptance-shallow', 'acceptance-shallow-forged']) {
+  test(`${kind} fetches missing ancestry without moving the pinned checkout`, { timeout: 15_000 }, async () => {
+    await scenario(kind, async ({ options }) => {
+      const git = (args: string[]) => execFileSync('git', args, { cwd: options.cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+      options.env.AGENT_PR_NUMBER = '8';
+      const baseline = options.env.AGENT_WORKFLOW_BASELINE_SHA;
+      assert.ok(baseline);
+      assert.equal(git(['rev-parse', '--is-shallow-repository']), 'true');
+      assert.throws(() => git(['merge-base', '--is-ancestor', baseline, 'HEAD']));
+      const result = await executeCheck(options);
+      assert.equal(git(['rev-parse', '--is-shallow-repository']), 'false');
+      assert.equal(git(['rev-parse', 'HEAD']), options.env.AGENT_SOURCE_SHA);
+      assert.equal(result.state, kind === 'acceptance-shallow' ? 'PASS' : 'INCONCLUSIVE', result.state === 'INCONCLUSIVE' ? result.reason : '');
+      if (kind === 'acceptance-shallow-forged') {
+        assert.equal(result.auth, 'not-loaded');
+        assert.equal(result.cleanup.state, 'not-needed');
       }
     });
   });

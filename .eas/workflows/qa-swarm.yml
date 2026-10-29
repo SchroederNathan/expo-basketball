@@ -44,8 +44,6 @@ jobs:
       AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - run: bun .eas/agents/qa-swarm.ts preflight
 
@@ -108,8 +106,6 @@ jobs:
       attempt_id: ${{ steps.swarm.outputs.attempt_id }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - name: Install media evidence tools
         run: |

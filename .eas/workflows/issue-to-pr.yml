@@ -48,8 +48,6 @@ jobs:
       criteria_sha256: ${{ steps.freeze.outputs.criteria_sha256 }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - id: freeze
         run: |
@@ -75,8 +73,6 @@ jobs:
       state: ${{ steps.change.outputs.state }}
     steps:
       - uses: eas/checkout
-        with:
-          fetch_depth: 0
       - uses: eas/install_node_modules
       - id: change
         run: |

@@ -57,8 +57,14 @@ An INCONCLUSIVE result is useful to show. Explain its concrete cause and the evi
 
 The [manual baseline Agentic CI run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a185ea-35e7-7406-93dc-19648335a00e) passed. Independent verification checked exact source and installed artifact identity, all three baseline journeys, five PNGs, complete recording decode, successful process termination, the persisted-auth receipt, and scoped STOPPED. This one workflow took about 7 minutes 16 seconds, including native lookup and repack. That is one observed run, not a completion-time guarantee.
 
-The original recording contains one backwards timestamp jump. Its frames decode and contain the required screens, but smooth playback still needs a separate check before using it in the presentation. Keep the original evidence unchanged.
+The original recording contains one backwards timestamp jump. Keep it unchanged as evidence. A separate local presentation copy preserves all 1,584 decoded frames in order at a fixed 12 fps, with increasing timestamps and complete decode verified. Its playback timing is edited and cannot establish elapsed workflow time.
 
-Triage, coding PR/publication, repaired acceptance, GitHub event dispatch, and the three-session swarm still require their cloud receipts. Update this section as those rehearsals finish.
+The [subscription concurrency probe](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18610-217b-7052-85a2-5efc365bdb56) passed on Linux. Real issue-label events dispatched [triage](https://github.com/SchroederNathan/expo-basketball/actions/runs/40822027019) and [coding](https://github.com/SchroederNathan/expo-basketball/actions/runs/40822288240) at the frozen release SHA. EAS queued coding behind triage with no coding jobs started.
+
+[Triage](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18613-1186-705b-ae97-5f7f07f5dc8f) returned REPLICATED with the original four criteria, six decoded PNGs, a fully decoded recording, persisted auth, and independently confirmed STOPPED. Its [issue comment](https://github.com/SchroederNathan/expo-basketball/issues/3#issuecomment-6488665890) agrees with the downloaded evidence.
+
+[Coding](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18615-a0cc-7e37-89d8-fadd3a6b0a32) opened [PR 4](https://github.com/SchroederNathan/expo-basketball/pull/4) with four app source/test files, successful checks, and persisted subscription auth. A [repeated request](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18622-5405-7eeb-8da2-23c3d2c83e35) returned the same PR and candidate without starting Codex or loading auth.
+
+The first automatic PR check correctly stopped INCONCLUSIVE because EAS's shallow checkout lacked the frozen base commit. The controller now fetches missing history while keeping HEAD pinned; repaired acceptance and the three-session simulator swarm still need their cloud receipts. The PR retains its original issue and criteria receipt through this controller upgrade.
 
 [Draft documentation feedback](research/agentic-workflows-docs-feedback.md) records the issues and recommendations found during implementation.
