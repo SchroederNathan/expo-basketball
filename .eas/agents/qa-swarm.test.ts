@@ -166,7 +166,7 @@ for (const mode of ['malformed', 'failed-turn', 'wrong-lane', 'missing-turn', 'm
   });
 }
 
-for (const mode of ['device-open-failed-json', 'device-open-failed-text']) {
+for (const mode of ['device-open-failed-json', 'device-open-failed-text', 'device-open-failed-stderr']) {
   test(`${mode} retains the failed operation and safe diagnostics through cleanup`, { timeout: 15_000 }, async () => {
     await scenario(mode, async ({ options, events }) => {
       const result = await executeSwarm(options);
@@ -182,6 +182,9 @@ for (const mode of ['device-open-failed-json', 'device-open-failed-text']) {
         assert.ok(!JSON.stringify(lane.deviceFailure).includes('synthetic-device-token'));
         assert.ok(!JSON.stringify(lane.deviceFailure).includes('?token='));
       } else assert.equal(lane.deviceFailure?.error, null);
+      if (mode.endsWith('stderr')) assert.ok(lane.deviceFailure?.stderr.includes('Tool resolution failed'));
+      assert.ok(!JSON.stringify(lane.deviceFailure).includes('synthetic-device-token'));
+      assert.ok(!JSON.stringify(lane.deviceFailure).includes('?token='));
       assert.equal(lane.threadId, null);
       assert.equal(result.auth, 'persisted');
       assert.ok(result.lanes.every((lane) => lane.cleanup.state === 'stopped'));

@@ -21,7 +21,8 @@ const deadlines = { startupMs: 240_000, agentMs: 900_000, cleanupMs: 120_000,
   deviceMs: 120_000, authMs: 60_000, requestMs: 60_000, stopMs: 10_000 };
 export type SwarmOptions = { cwd: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal;
   executables?: typeof tools; limits?: typeof deadlines & { mediaMs?: number }; githubApiBase?: string };
-type DeviceFailure = { operation: string; termination: Termination; error: { code: string; message: string } | null };
+type DeviceFailure = { operation: string; termination: Termination; error: { code: string; message: string } | null;
+  stdout: string; stderr: string };
 type Lane = { id: LaneId; attemptId: string; directory: string; evidenceDirectory: string; publicDirectory: string;
   simulator: Simulator; env: NodeJS.ProcessEnv | null; session: Session | null; threadId: string | null;
   turn: TurnReceipt | null; verdict: LaneVerdict | null; identity: FileRef | null; recording: FileRef | null;
@@ -90,7 +91,8 @@ export async function executeSwarm(options: SwarmOptions) {
         const parsed = deviceErrorSchema.safeParse(JSON.parse(result.stdout));
         if (parsed.success) error = { code: sanitize(parsed.data.error.code, secrets), message: sanitize(parsed.data.error.message, secrets) };
       } catch {}
-      lane.deviceFailure ??= { operation, termination: result.termination, error };
+      lane.deviceFailure ??= { operation, termination: result.termination, error,
+        stdout: sanitize(result.stdout, secrets).slice(0, 2000), stderr: sanitize(result.stderr, secrets).slice(0, 2000) };
       lane.problem ??= `Device ${operation} did not complete.`;
       throw new Error('Lane device command did not complete.');
     }
