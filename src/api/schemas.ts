@@ -325,6 +325,14 @@ export const leadersSchema = z.object({
   ),
 });
 
+const seasonStat = z
+  .object({ label: text, name: text, value: text, rank: text })
+  .transform(({ label, name, value, rank }) => ({
+    label: label.trim() || (name === 'pointsPerGame' ? 'PTS' : 'Stat'),
+    value,
+    rank,
+  }));
+
 export const playerPageSchema = z.object({
   player: z.object({
     id: playerId,
@@ -338,7 +346,7 @@ export const playerPageSchema = z.object({
       .catch(null),
     bio: z.array(infoLine),
     season: text,
-    stats: z.array(z.object({ label: text, value: text, rank: text })),
+    stats: z.array(seasonStat),
   }),
   games: z.array(
     z.object({
