@@ -1,6 +1,6 @@
 {
   "name": "expo-basketball",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo-google-fonts/barlow-condensed": "^0.4.1",
@@ -37,12 +37,16 @@
     "react-native-screens": "~4.30.0",
     "react-native-svg": "15.16.0",
     "react-native-web": "~0.21.4",
+    "react-native-webgpu": "0.19.2",
     "react-native-worklets": "0.13.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
     "@types/react": "~19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@webgpu/types": "0.1.65",
+    "playwright-core": "1.61.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -62,7 +66,9 @@
     "update:production": "bun run eas update --channel production --environment production --platform all",
     "check:agents": "tsc --noEmit -p .eas/agents/tsconfig.json && bun test ./.eas/agents/*.test.ts && bun .eas/agents/check-workflow.mjs && bun .eas/agents/check-qa-workflow.mjs",
     "check:fixtures": "bun test ./src/api/demo.test.ts && EXPO_PUBLIC_AGENT_DEMO=prizepicks-v1 bun scripts/check-demo.ts",
-    "check:agentic": "bun run check:agents && bun run check:fixtures"
+    "check:agentic": "bun run check:agents && bun run check:fixtures",
+    "check:curtain": "node scripts/curtain/generate.mjs --check",
+    "check:curtain:gpu": "bun scripts/curtain/check-browser.mjs"
   },
   "private": true,
   "packageManager": "bun@1.2.22",

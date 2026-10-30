@@ -2,7 +2,7 @@
   "expo": {
     "name": "Lob",
     "slug": "expo-basketball",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "scheme": "basketball",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -33,7 +33,8 @@
           "image": "./assets/icon.png",
           "imageWidth": 76
         }
-      ]
+      ],
+      "react-native-webgpu"
     ],
     "experiments": {
       "typedRoutes": true,

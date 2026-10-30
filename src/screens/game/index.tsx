@@ -1,8 +1,9 @@
 import SegmentedControl from '@expo/ui/community/segmented-control';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useState } from 'react';
-import { FlatList, Platform, RefreshControl, Share, StyleSheet, View } from 'react-native';
+import { Platform, RefreshControl, Share, StyleSheet, View } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { usePlays, useGame, useSeedGame } from '@/api/queries';
 import type { Game, Play } from '@/api/schemas';
 import { HeaderIconButton } from '@/components/header-icon-button';
@@ -13,7 +14,6 @@ import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
 import { SectionLabel } from '@/components/section-label';
-import { TeamBackdrop } from '@/components/team-backdrop';
 import { gameTitle, gameWebUrl } from '@/domain/game';
 import type { GameRef } from '@/domain/ids';
 import { playsInPeriod, resolvePeriod, type PeriodChoice } from '@/domain/plays';
@@ -21,6 +21,7 @@ import { parseGameParams } from '@/navigation/hrefs';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, space } from '@/theme';
 import { BoxScore } from './box-score';
+import { GameCurtain } from './curtain';
 import { FlowChart } from './flow-chart';
 import { GameStandings } from './game-standings';
 import { GameHero, GameStatusTitle } from './hero';
@@ -60,6 +61,13 @@ export function GameScreen() {
 function GameDetail({ gameRef }: { gameRef: GameRef }) {
   const { zone } = useCalendar();
   const headerHeight = useHeaderHeight();
+  const focused = useIsFocused();
+  const scrollY = useSharedValue(0);
+  // The iOS automatic navigation inset is not included in scroll event contentInset.
+  const insetTop = Platform.OS === 'ios' ? headerHeight : 0;
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.set(event.contentOffset.y + insetTop);
+  });
   const seed = useSeedGame(gameRef);
   const detail = useGame({ ref: gameRef, zone });
   const [section, setSection] = useState<Section>('box');
@@ -111,7 +119,15 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
             : undefined,
         }}
       />
-      <FlatList
+      <GameCurtain
+        palette={game ? { away: game.away.accent, home: game.home.accent } : null}
+        active={focused}
+        contentOriginY={headerHeight}
+        scrollY={scrollY}
+      />
+      <Animated.FlatList
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
         data={items}
@@ -142,12 +158,6 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
         }}
         ListHeaderComponent={
           <View style={{ paddingTop: ios ? 0 : headerHeight }}>
-            {game ? (
-              <TeamBackdrop
-                backdrop={{ kind: 'matchup', away: game.away.accent, home: game.home.accent }}
-                top={ios ? -headerHeight : 0}
-              />
-            ) : null}
             {game ? (
               <GameHero game={game}>
                 {data && !data.flow.empty ? (
@@ -228,7 +238,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
 const styles = StyleSheet.create({
   list: {
     flex: 1,
-    backgroundColor: colors.background,
+    backgroundColor: 'transparent',
   },
   sections: {
     marginHorizontal: layout.screenPadding,
