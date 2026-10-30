@@ -163,7 +163,10 @@ jobs:
             set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).attemptId')"
             set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
             set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).publication_state || "unavailable"')"
-            set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).publication_url || ""')"
+            PUBLICATION_URL=$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).publication_url || ""')
+            if [ -n "$PUBLICATION_URL" ]; then
+              set-output publication_url "$PUBLICATION_URL"
+            fi
           else
             set-output state INCONCLUSIVE
           fi

@@ -102,7 +102,19 @@ const buildSchema = z.object({
 export async function verifyBuild({ target, eas, cwd, env, projectId }: { target: Target; eas: Command; cwd: string; env: NodeJS.ProcessEnv; projectId?: string }) {
   const read = async (id: string) => {
     const result = await command({ executable: eas, args: ['build:view', id, '--json'], cwd, env, timeoutMs: 60_000 });
-    if (!succeeded(result)) throw new Error('Build metadata unavailable.');
+    if (!succeeded(result)) {
+      const diagnostic = {
+        termination: result.termination.kind,
+        observation: result.observation,
+        stdoutPresent: result.stdout.length > 0,
+        stderrKind: /cannot find module|module not found|ERR_MODULE_NOT_FOUND/i.test(result.stderr) ? 'module-missing'
+          : /unauthorized|not authorized|authentication|not logged in/i.test(result.stderr) ? 'authentication'
+          : /FileNotFound|failed copying files|could not determine executable/i.test(result.stderr) ? 'package-launch'
+          : /ENOTFOUND|ECONNRESET|ETIMEDOUT|fetch failed/i.test(result.stderr) ? 'network'
+          : result.stderr.length ? 'unclassified' : 'empty',
+      };
+      throw new Error(`Build metadata unavailable. ${JSON.stringify(diagnostic)}`);
+    }
     const build = buildSchema.parse(JSON.parse(result.stdout));
     if (build.id !== id || build.fingerprint.hash !== target.fingerprint) throw new Error('Build or fingerprint mismatch.');
     if (projectId && (build.project && build.project.id !== projectId || build.projectId && build.projectId !== projectId || build.app && build.app.id !== projectId)) throw new Error('Build project mismatch.');
