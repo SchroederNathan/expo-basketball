@@ -99,6 +99,7 @@ export function mountCurtain(
   let configured = false;
   let pixelWidth = 0;
   let pixelHeight = 0;
+  let recoveryAttempts = 0;
   const fabric = new FabricFrame();
   fabric.update(input.palette, input.animate, false, clock.now());
 
@@ -169,7 +170,6 @@ export function mountCurtain(
   }
 
   async function initialize(): Promise<void> {
-    // Only acquisition failure is an unsupported-GPU fallback. Shader and API errors must surface.
     let device: GPUDevice | null;
     try {
       device = await surface.acquire();
@@ -193,7 +193,16 @@ export function mountCurtain(
     }
     const current = state;
     void device.lost.then(() => {
-      if (state === current) unavailable();
+      if (state !== current) return;
+      if (recoveryAttempts >= 1) {
+        unavailable();
+        return;
+      }
+      recoveryAttempts++;
+      release();
+      state = { kind: 'initializing' };
+      onUnavailable();
+      void initialize();
     });
     schedule();
   }

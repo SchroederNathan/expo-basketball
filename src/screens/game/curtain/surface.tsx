@@ -3,7 +3,6 @@ import type { CurtainSurface } from './renderer';
 import type { SurfaceProps } from './surface.types';
 import { useCurtainSurface } from './use-surface';
 
-// Web and SSR deliberately do not import the native module.
 export function CurtainSurfaceView(props: SurfaceProps) {
   const ref = useRef<HTMLCanvasElement>(null);
   const connect = useCallback((): CurtainSurface | null => {

@@ -9,7 +9,7 @@ export async function checkCurtainGpu(): Promise<string[]> {
   expect(adapter !== null && adapter !== undefined, 'A real WebGPU adapter is required.');
   const results: string[] = [];
   const errors: string[] = [];
-  const device = await adapter.requestDevice();
+  let device = await adapter.requestDevice();
   device.addEventListener('uncapturederror', (event) => errors.push(event.error.message));
   let time = 0;
   let nextId = 0;
@@ -119,17 +119,34 @@ export async function checkCurtainGpu(): Promise<string[]> {
   expect(Number(ready) === 1 && fallback === 0, 'Refresh and resize must preserve readiness.');
   results.push('Static palette changes, null retention and DPR resizing passed without recreating the owner.');
 
-  owner.update(input);
+  const recoveryInput = { ...input, palette: { away: '#0000FF', home: '#FF0000' }, width: 128, pixelRatio: 2 };
+  owner.update(recoveryInput);
+  frame(time);
+  const beforeLoss = await pixels();
+  const lostDevice = device;
+  const recoveryAdapter = await navigator.gpu.requestAdapter();
+  expect(recoveryAdapter !== null, 'A replacement adapter is required.');
+  device = await recoveryAdapter.requestDevice();
+  device.addEventListener('uncapturederror', (event) => errors.push(event.error.message));
+  lostDevice.destroy();
+  await lostDevice.lost;
+  await Promise.resolve();
+  expect(String(owner.status) === 'ready' && Number(fallback) === 1, 'Device loss must reacquire the GPU behind the fallback.');
+  time += 60000;
+  frame(time);
+  const recovered = await pixels();
+  expect(equal(beforeLoss, recovered), 'Recovery must preserve the original wind phase and palette.');
+  expect(Number(ready) === 2, 'Recovered GPU completion must reveal the replacement surface.');
   device.destroy();
   await device.lost;
   await Promise.resolve();
-  expect(String(owner.status) === 'unavailable' && Number(fallback) === 1 && frames.size === 0, 'Device loss must restore fallback and stop the loop.');
+  expect(String(owner.status) === 'unavailable' && Number(fallback) === 2 && frames.size === 0, 'Repeated loss must stop without an infinite retry loop.');
   owner.dispose();
   owner.dispose();
-  expect(released === 1, 'Context unconfiguration must be idempotent.');
+  expect(released === 2, 'Each GPU generation must release its context once.');
   surface.context.getCurrentTexture().destroy();
   expect(errors.length === 0, `GPU validation errors: ${errors.join('\n')}`);
-  results.push('Device loss, disposal and context release passed with zero GPU validation errors.');
+  results.push('GPU recovery preserves pixels; repeated loss, disposal and context release pass without GPU validation errors.');
 
   const lateAdapter = await navigator.gpu.requestAdapter();
   expect(lateAdapter !== null, 'A late-device adapter is required.');

@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/SchroederNathan/lob",
   "commit": "eab162b2395baa2f2ed2c40e8cb8ae7ba55f9517",
-  "shaderPath": "gpu/shaders/curtain.wgsl",
+  "shaderPath": "lob/gpu/shaders/curtain.wgsl",
   "shaderSha256": "5c624e61325d28d0ec554eb9e8ae151eb495b51370ba49c109c8161ebc991f36",
-  "generatorPath": "gpu/build/leather.rs",
+  "generatorPath": "lob/gpu/build/leather.rs",
   "generatorSha256": "a25438eaeb020d7a8466627857a138e858b2d02b7e3f8a0de4d07dc8389800c6",
   "textureSha256": "9c9e91a2280ed2e1cce6ef5fcfac894e9baa99b1c8ef6894b7d145d936eb9b0d"
 }

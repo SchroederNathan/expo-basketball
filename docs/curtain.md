@@ -2,7 +2,7 @@
 
 The game screen owns one persistent curtain behind its list. Refresh and section changes retain its canvas, wind phase, and palette. The team screen keeps its existing backdrop.
 
-The renderer ports [Exact Lob at eab162b2](https://github.com/SchroederNathan/lob/tree/eab162b2395baa2f2ed2c40e8cb8ae7ba55f9517/gpu). `src/screens/game/curtain/provenance.json` records source checksums. The WGSL and Rust texture generator are unchanged. The generated TypeScript packages the shader and all nine RGBA8 texture mips without runtime file access or a Rust toolchain.
+The renderer ports [Exact Lob at eab162b2](https://github.com/SchroederNathan/lob/tree/eab162b2395baa2f2ed2c40e8cb8ae7ba55f9517/lob/gpu). `src/screens/game/curtain/provenance.json` records source checksums. The WGSL and Rust texture generator are unchanged. The generated TypeScript packages the shader and all nine RGBA8 texture mips without runtime file access or a Rust toolchain.
 
 Run the checks from the repository root:
 
