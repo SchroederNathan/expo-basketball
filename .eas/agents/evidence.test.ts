@@ -222,6 +222,30 @@ for (const mode of ['normal', 'partial', 'lost'] as const) test(`real native she
   } finally { await api.close(); }
 });
 
+for (const moving of [false, true]) test(`TesterArmy manifest retains native acceptance destination protection, moving head ${moving}`, { timeout: 20_000 }, async () => {
+  const api = await apiFixture();
+  try {
+    api.manifest.workflow = 'testerarmy';
+    api.manifest.target = targetSchema.parse({ ...target, kind: 'acceptance',
+      issue: { number: 3, id: 7, nodeId: 'node', sha256: '1'.repeat(64) },
+      criteria: { path: 'demo/issues/player-label.md', sha256: '2'.repeat(64) } });
+    const original = api.pr.body;
+    if (moving) api.pr.head.sha = 'b'.repeat(40);
+    const receipt = await api.deliver();
+    assert.equal(receipt.state, moving ? 'unavailable' : 'complete');
+    assert.equal(api.stats().creates, moving ? 0 : 1);
+    assert.equal(api.pr.body, original);
+    if (!moving) {
+      assert.ok(api.comments[0]!.body.includes('TesterArmy e2e iOS: PASS'));
+      assert.ok(api.comments[0]!.body.includes(':testerarmy:'));
+      const writes = api.writes.length;
+      const repeated = await api.deliver();
+      assert.equal(repeated.state, 'complete');
+      assert.equal(api.writes.length, writes);
+    }
+  } finally { await api.close(); }
+});
+
 test('an absent create response is retained as ambiguous and is never blindly retried', { timeout: 15_000 }, async () => {
   const api = await apiFixture('absent'); try {
     assert.equal((await api.deliver()).state, 'unavailable'); assert.equal((await api.deliver()).state, 'unavailable'); assert.equal(api.stats().creates, 1);
