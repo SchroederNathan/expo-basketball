@@ -12,7 +12,7 @@ const manifest = JSON.parse(readFileSync(join(output, 'provenance.json'), 'utf8'
 const shader = readFileSync(join(output, 'curtain.wgsl'));
 const generator = readFileSync(join(root, 'scripts/curtain/leather.rs'));
 if (hash(shader) !== manifest.shaderSha256 || hash(generator) !== manifest.generatorSha256) {
-  throw new Error('Exact source checksum differs. Verify upstream before updating provenance.');
+  throw new Error('Recorded source checksum differs. Verify the local shader and upstream texture generator before updating provenance.');
 }
 const temporary = mkdtempSync(join(tmpdir(), 'lob-curtain-'));
 try {
@@ -29,7 +29,7 @@ try {
   } else {
     writeFileSync(target, generated);
   }
-  console.log(`Exact curtain verified. WGSL ${hash(shader)}, texture ${hash(leather)} (9 mips, ${leather.length} bytes).`);
+  console.log(`Curtain verified. Recorded WGSL ${hash(shader)}, original Rust texture ${hash(leather)} (9 mips, ${leather.length} bytes).`);
 } finally {
   rmSync(temporary, { recursive: true, force: true });
 }

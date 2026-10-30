@@ -11,7 +11,7 @@ struct Uniforms {
 @group(0) @binding(0) var<uniform> u: Uniforms;
 @group(0) @binding(1) var leather: texture_2d<f32>;
 @group(0) @binding(2) var leather_sampler: sampler;
-const LEATHER_POINTS: f32 = 64.0;
+const LEATHER_POINTS: f32 = 80.0;
 
 struct Vertex {
     @builtin(position) position: vec4<f32>,
@@ -35,7 +35,7 @@ fn vs(@builtin(vertex_index) i: u32) -> Vertex {
     // Project the material through the SAME animated height field as the
     // folds. Interpolation stretches/compresses the grain with each ridge,
     // rather than sliding an independent screen-space noise layer over it.
-    // A tile is 64 logical points, so pebble size is independent of DPR.
+    // A tile is 80 logical points, so pebble size is independent of DPR.
     vertex.material = (p + vec2<f32>(0.038, 0.09) * height) * u.point_width / LEATHER_POINTS;
     return vertex;
 }
@@ -62,7 +62,7 @@ fn fold(p: vec2<f32>, time: f32, offset: f32, width: f32,
 fn cloth(p: vec2<f32>) -> f32 {
     // A slow shared gust carries every fold across the color boundary. The
     // overlapping, unequal folds avoid parallel bands or two mirrored halves.
-    let time = u.time * 0.25;
+    let time = u.time * 0.3125;
     var height = 0.16 * sin(p.x * 2.1 + p.y * 1.8 - time * 0.48);
     height += fold(p, time, 0.55, 0.12, 1.20, 0.50, 0.4, 0.54);
     height += fold(p, time, 0.92, 0.07, 0.32, 0.72, 2.4, 0.18);

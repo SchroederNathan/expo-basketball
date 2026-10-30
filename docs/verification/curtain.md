@@ -31,3 +31,9 @@ The recording exported successfully without touch markers. Adding those markers 
 ## Limits
 
 The pixel comparison establishes parity on one software GPU backend. Native validation establishes visible motion, compositing, and interaction on an iOS simulator. It does not establish native pixel equality with the Exact app, physical-device performance, or Android native rendering. Reduced motion and GPU loss were exercised in the real browser GPU harness; the simulator's OS reduced-motion setting was not toggled.
+
+## Tuning follow-up, October 30, 2026
+
+The checks, screenshot, and source pixel comparison above describe the shader in the build from `5e85eb9a8620c6ffd46e059066379c2170f0c32a`. A later source-only change increases leather tiles from 64 to 80 logical points and the cloth time multiplier from 0.25 to 0.3125. The original Rust texture bytes remain unchanged. The installed EAS build still contains the earlier shader. The historical checks do not verify the tuned shader or establish its native appearance or source pixel parity.
+
+The tuned shader passed the real browser GPU harness, all 152 application tests, public-file checks, and asset regeneration checks.

@@ -2,7 +2,7 @@
 
 The game screen owns one persistent curtain behind its list. Refresh and section changes retain its canvas, wind phase, and palette. The team screen keeps its existing backdrop.
 
-The renderer ports [Exact Lob at eab162b2](https://github.com/SchroederNathan/lob/tree/eab162b2395baa2f2ed2c40e8cb8ae7ba55f9517/lob/gpu). `src/screens/game/curtain/provenance.json` records source checksums. The WGSL and Rust texture generator are unchanged. The generated TypeScript packages the shader and all nine RGBA8 texture mips without runtime file access or a Rust toolchain.
+The renderer derives from [Exact Lob at eab162b2](https://github.com/SchroederNathan/lob/tree/eab162b2395baa2f2ed2c40e8cb8ae7ba55f9517/lob/gpu). `src/screens/game/curtain/provenance.json` preserves the upstream shader checksum as `upstreamShaderSha256` and records the local shader checksum as `shaderSha256`. The local WGSL intentionally uses 80-point leather tiles and a 0.3125 cloth time multiplier, compared with upstream's 64 points and 0.25. Both grain size and wave rate increase by 25%. The Rust texture generator and all nine RGBA8 texture mips remain unchanged. The generated TypeScript packages the shader and texture mips without runtime file access or a Rust toolchain.
 
 Run the checks from the repository root:
 
@@ -12,7 +12,7 @@ bun run check:curtain
 bun run check:curtain:gpu
 ```
 
-`check:curtain` requires `rustc`. To regenerate the packaged assets, run `node scripts/curtain/generate.mjs`. The script refuses source or texture checksum changes.
+`check:curtain` requires `rustc`. To regenerate the packaged assets, run `node scripts/curtain/generate.mjs`. The script verifies the recorded local shader checksum and the original Rust generator and texture checksums.
 
 `check:curtain:gpu` requires Chromium. Install it with `bunx playwright-core install chromium`, or set `CURTAIN_CHROMIUM_PATH` to an existing Chromium executable. It runs the production renderer on browser WebGPU with SwiftShader, reads its pixels, and checks readiness, wind, palette updates, pause/resume, resizing, device loss, and cancellation. It also mounts the real React web surface without `navigator.gpu` to check fallback. This software GPU check does not establish native visual parity.
 

@@ -58,7 +58,7 @@ test('disabling animation snaps changed palettes and preserves unchanged wall-ti
   assert.deepEqual([...frame.pack(1400, 402, 688, 402).slice(8)], [0, 1, 0, 1, 0, 1, 0, 1]);
 });
 
-test('grid winding and source shader and Rust texture bytes match the original contracts', () => {
+test('grid winding, recorded shader, and original Rust texture bytes match their contracts', () => {
   const grid = gridIndices();
   assert.equal(grid.length, INDEX_COUNT);
   for (let cell = 0; cell < 96 * 164; cell++) {
