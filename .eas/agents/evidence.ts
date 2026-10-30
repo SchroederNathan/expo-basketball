@@ -38,7 +38,7 @@ export function destination(result: Result | QaResult): Destination | null {
 }
 export type Slot = FileRef & { id: string; role: 'screenshot' | 'original' | 'playback'; lane: string; caption: string;
   transform: Awaited<ReturnType<typeof derivePlayback>>['transform'] | null };
-export type Manifest = { version: 1; origin: 'live' | 'historical'; note: string; provenance: ObservedEvidence['provenance']; workflow: 'qa' | 'ci' | 'triage';
+export type Manifest = { version: 1; origin: 'live' | 'historical'; note: string; provenance: ObservedEvidence['provenance']; workflow: 'qa' | 'ci' | 'triage' | 'testerarmy';
   runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[]; slots: Slot[] };
 
 export function plain(text: string) {
@@ -117,7 +117,7 @@ export function renderEvidence(manifest: Manifest, marker: string, selected: rea
   const target = manifest.target;
   const native = target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
     : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`;
-  const lines = [marker, `## ${manifest.workflow === 'qa' ? 'QA Swarm iOS' : manifest.workflow === 'triage' ? 'Bug triage iOS' : 'Agentic CI iOS'}: ${manifest.state}`,
+  const lines = [marker, `## ${manifest.workflow === 'qa' ? 'QA Swarm iOS' : manifest.workflow === 'triage' ? 'Bug triage iOS' : manifest.workflow === 'testerarmy' ? 'TesterArmy e2e iOS' : 'Agentic CI iOS'}: ${manifest.state}`,
     '', `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`, '',
     state === 'stale' ? 'Stale or unverified destination. Archived observation only. No current-head verdict is asserted.' : manifest.origin === 'historical' ? 'Historical backfill of an archived observation. No current-head verdict is asserted.' : 'Live controller observation.',
     plain(manifest.note), ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []), '', `Source [${target.source.sha}](https://github.com/${target.repository}/commit/${target.source.sha}) on ${plain(target.source.ref)}.`,

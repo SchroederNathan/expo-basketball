@@ -11,6 +11,7 @@ Read the other guides by purpose:
 - **Start from GitHub issues:** [Issue label bridge](agent-label-bridge.md), covering `agent-triage` and `agent`.
 - **Read embedded evidence:** [Rich PR and issue reports](rich-evidence.md), covering screenshots, playback, originals, and publication receipts.
 - **Understand concurrent testing:** [QA Swarm](qa-swarm.md), including lane ownership, tool preparation, and evidence checks.
+- **Run open source e2e acceptance:** [TesterArmy Jordan check](testerarmy-e2e.md), including dedicated subscription login, manual proof runs, replay, and rich evidence.
 - **Review the proposed public guides:** [Expo docs feedback](research/agentic-workflows-docs-feedback.md).
 - **Understand the client context:** [PrizePicks release context](research/prizepicks-release-context.md) and [research index](research/README.md). The original research is a dated plan; use the runbooks for the implementation.
 

@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import Ajv from 'ajv/dist/2020.js';
+
+const [schemaPath, workflowPath] = process.argv.slice(2);
+assert.ok(schemaPath && workflowPath, 'Pass the freshly fetched primary EAS schema and workflow paths.');
+const fetched = JSON.parse(readFileSync(schemaPath, 'utf8'));
+const schema = fetched.data ?? fetched;
+const workflow = JSON.parse(execFileSync('bun', ['-e', 'console.log(JSON.stringify(Bun.YAML.parse(await Bun.file(process.argv[1]).text())))', workflowPath], { encoding: 'utf8' }));
+const ajv = new Ajv({ strict: false, allErrors: true, validateFormats: false });
+assert.ok(ajv.validate(schema, workflow), JSON.stringify(ajv.errors));
+assert.deepEqual(Object.keys(workflow.on), ['workflow_dispatch']);
+assert.equal(workflow.concurrency.group, 'codex-subscription-agentic-ios');
+assert.equal(workflow.concurrency.cancel_in_progress, false);
+assert.equal(workflow.defaults.tools.node, '22.23.1');
+assert.equal(workflow.defaults.tools.bun, '1.2.22');
+assert.deepEqual(workflow.jobs.fingerprint.needs, ['preflight']);
+assert.deepEqual(workflow.jobs.get_build.needs, ['fingerprint']);
+assert.equal(workflow.jobs.repack.params.embed_bundle_assets, true);
+assert.equal(workflow.jobs.repack.params.js_bundle_only, false);
+assert.equal(workflow.jobs.check.env.AGENT_BUILD_ID, '${{ after.build.outputs.build_id || after.repack.outputs.build_id }}');
+assert.equal(workflow.jobs.check.env.AGENT_NATIVE_SOURCE_BUILD_ID, "${{ needs.get_build.outputs.build_id || '' }}");
+assert.equal(workflow.jobs.result.if, "${{ after.check.outputs.state != 'PASS' }}");
+for (const name of ['issue_number', 'issue_digest', 'criteria_sha256']) assert.equal(workflow.on.workflow_dispatch.inputs[name].required, true);
+process.stdout.write('Primary EAS schema and manual source/build/publication graph checks passed. Authenticated EAS validation remains required.\n');

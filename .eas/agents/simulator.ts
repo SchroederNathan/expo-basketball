@@ -94,14 +94,18 @@ const buildSchema = z.object({
   appIdentifier: z.literal('dev.expo.basketball'),
   gitCommitHash: z.string(), fingerprint: z.object({ hash: z.string() }),
   runtime: z.object({ version: z.literal('1.0.0') }),
+  project: z.object({ id: z.uuid() }).optional(),
+  projectId: z.uuid().optional(),
+  app: z.object({ id: z.uuid() }).optional(),
 });
 
-export async function verifyBuild({ target, eas, cwd, env }: { target: Target; eas: Command; cwd: string; env: NodeJS.ProcessEnv }) {
+export async function verifyBuild({ target, eas, cwd, env, projectId }: { target: Target; eas: Command; cwd: string; env: NodeJS.ProcessEnv; projectId?: string }) {
   const read = async (id: string) => {
     const result = await command({ executable: eas, args: ['build:view', id, '--json'], cwd, env, timeoutMs: 60_000 });
     if (!succeeded(result)) throw new Error('Build metadata unavailable.');
     const build = buildSchema.parse(JSON.parse(result.stdout));
     if (build.id !== id || build.fingerprint.hash !== target.fingerprint) throw new Error('Build or fingerprint mismatch.');
+    if (projectId && (build.project && build.project.id !== projectId || build.projectId && build.projectId !== projectId || build.app && build.app.id !== projectId)) throw new Error('Build project mismatch.');
     return build;
   };
   const installed = await read(target.native.installed);

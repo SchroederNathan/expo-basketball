@@ -1,0 +1,184 @@
+name: TesterArmy e2e iOS
+
+'on':
+  workflow_dispatch:
+    inputs:
+      repository:
+        type: string
+        required: true
+        description: Trusted owner/repository
+      target_ref:
+        type: string
+        required: true
+        description: Branch containing the audited workflow baseline
+      candidate_sha:
+        type: string
+        required: true
+        description: Exact candidate SHA, also required as workflow --ref
+      pr_number:
+        type: string
+        required: false
+        description: Optional trusted PR destination, omit for artifact-only proof
+      issue_number:
+        type: string
+        required: true
+        description: Frozen original demo issue acceptance check
+      issue_digest:
+        type: string
+        required: true
+        description: Original issue input digest from Issue to PR
+      criteria_sha256:
+        type: string
+        required: true
+        description: Original acceptance criteria digest from Issue to PR
+
+      verify_replay:
+        type: boolean
+        required: false
+        default: false
+        description: Run two repaired recording passes and one strict verified replay
+
+permissions:
+  account:
+    role: developer
+
+concurrency:
+  group: codex-subscription-agentic-ios
+  queue: max
+  cancel_in_progress: false
+
+defaults:
+  tools:
+    bun: 1.2.22
+    node: 22.23.1
+
+jobs:
+  preflight:
+    name: Verify trusted candidate
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+      AGENT_TASK: acceptance
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
+      AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
+      AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Install isolated pinned e2e tools
+        run: bun install --cwd .eas/agents/testerarmy --frozen-lockfile --ignore-scripts
+      - name: Install media evidence tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - run: bun .eas/agents/testerarmy/controller.ts preflight
+
+  fingerprint:
+    type: fingerprint
+    needs: [preflight]
+    environment: preview
+    env:
+      EXPO_PUBLIC_AGENT_DEMO: prizepicks-v1
+
+  get_build:
+    type: get-build
+    needs: [fingerprint]
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+      simulator: true
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      wait_for_in_progress: true
+
+  build:
+    type: build
+    needs: [get_build]
+    if: ${{ !needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+
+  repack:
+    type: repack
+    needs: [get_build]
+    if: ${{ needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      build_id: ${{ needs.get_build.outputs.build_id }}
+      profile: agent-preview
+      embed_bundle_assets: true
+      js_bundle_only: false
+
+  check:
+    name: Assert original criteria on the installed iOS candidate
+    needs: [preflight, fingerprint, get_build]
+    after: [build, repack]
+    environment: preview
+    env:
+      AGENT_REPOSITORY: ${{ inputs.repository }}
+      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+      AGENT_TASK: acceptance
+      AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
+      AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
+      AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
+      TESTERARMY_VERIFY_REPLAY: ${{ inputs.verify_replay && 'true' || 'false' }}
+      AGENT_RUN_ID: ${{ workflow.id }}
+      AGENT_RUN_URL: ${{ workflow.url }}
+      AGENT_BUILD_ID: ${{ after.build.outputs.build_id || after.repack.outputs.build_id }}
+      AGENT_NATIVE_SOURCE_BUILD_ID: ${{ needs.get_build.outputs.build_id || '' }}
+      AGENT_NATIVE_SOURCE_SHA: ${{ needs.get_build.outputs.git_commit_hash || '' }}
+      AGENT_FINGERPRINT: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+    outputs:
+      state: ${{ steps.check.outputs.state }}
+      attempt_id: ${{ steps.check.outputs.attempt_id }}
+      observed_state: ${{ steps.check.outputs.observed_state }}
+      publication_state: ${{ steps.check.outputs.publication_state }}
+      publication_url: ${{ steps.check.outputs.publication_url }}
+    steps:
+      - uses: eas/checkout
+      - uses: eas/install_node_modules
+      - name: Install isolated pinned e2e tools
+        run: bun install --cwd .eas/agents/testerarmy --frozen-lockfile --ignore-scripts
+      - name: Install media evidence tools
+        run: |
+          if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y ffmpeg
+          fi
+      - id: check
+        run: |
+          rm -f agent-output/testerarmy/status.json
+          bun .eas/agents/testerarmy/controller.ts run || true
+          if [ -f agent-output/testerarmy/status.json ]; then
+            set-output state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).state')"
+            set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).attemptId')"
+            set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
+            set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).publication_state || "unavailable"')"
+            set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).publication_url || ""')"
+          else
+            set-output state INCONCLUSIVE
+          fi
+      - uses: eas/upload_artifact
+        if: ${{ always() }}
+        with:
+          type: other
+          name: testerarmy-ios-evidence
+          path: agent-output/testerarmy/public/**/*
+
+  result:
+    name: Require a verified PASS
+    after: [preflight, fingerprint, get_build, build, repack, check]
+    if: ${{ after.check.outputs.state != 'PASS' }}
+    steps:
+      - run: |
+          echo 'The iOS check has no verified PASS. Inspect its result and evidence artifacts.'
+          exit 1
