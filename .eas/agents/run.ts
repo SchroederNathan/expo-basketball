@@ -14,7 +14,7 @@ import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
 import { admitFile, buildIdSchema, publishFile, resultSchema, sanitize, shaSchema, targetSchema, verdictSchema, issueVerdictSchema,
   type Cleanup, type FileRef, type Result, type Session, type Target, type Termination, type Verdict } from './result';
-import { identityLabel, readJson, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
+import { identityLabel, readAppRuntime, readJson, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
 const tools = {
   eas: { file: 'bunx', args: ['eas-cli@25.3.0'] },
@@ -109,7 +109,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
       kind: task, issue: prepared.issue?.identity ?? null, controller: prepared.request.source, source: prepared.request.source,
       repository: prepared.request.repository, pullRequest: prepared.request.pullRequest,
       platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview',
-      fingerprint: options.env.AGENT_FINGERPRINT, runtime: '1.0.0', fixture: prepared.demoFixture,
+      fingerprint: options.env.AGENT_FINGERPRINT, runtime: await readAppRuntime(options.cwd), fixture: prepared.demoFixture,
       criteria: prepared.criteria, native, bundle: { kind: 'embedded', candidate: prepared.request.source.sha },
     });
     partial.push(await publishFile({ directory: publicDirectory, name: 'target.json', bytes: JSON.stringify(target, null, 2) }));

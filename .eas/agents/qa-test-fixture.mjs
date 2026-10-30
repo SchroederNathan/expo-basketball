@@ -11,7 +11,7 @@ const out = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const lane = basename(process.cwd());
 const affected = lane === 'scores';
 const value = (flag) => args[args.indexOf(flag) + 1];
-const identity = `Lob demo prizepicks-v1 source=${c.sha} fixture=${c.fixtureDigest} runtime=1.0.0 bundle=${c.mode === 'wrong-bundle' && affected ? 'ota' : 'embedded'}`;
+const identity = `Lob demo prizepicks-v1 source=${c.sha} fixture=${c.fixtureDigest} runtime=${c.runtime} bundle=${c.mode === 'wrong-bundle' && affected ? 'ota' : 'embedded'}`;
 
 if (tool === 'runtime') {
   log({ tool, args, envKeys: Object.keys(process.env) });
@@ -201,7 +201,7 @@ if (tool === 'server') {
   } else if (args[0] === 'build:view') {
     out({ id: args[1], status: 'FINISHED', platform: 'IOS', buildProfile: 'agent-preview', isForIosSimulator: true,
       appIdentifier: 'dev.expo.basketball', gitCommitHash: c.mode === 'wrong-build' ? 'b'.repeat(40) : args[1] === c.nativeBuild ? 'c'.repeat(40) : c.sha,
-      fingerprint: { hash: 'a'.repeat(40) }, runtime: { version: '1.0.0' } });
+      fingerprint: { hash: 'a'.repeat(40) }, runtime: { version: c.runtime } });
   } else if (args[0] === 'simulator:start') {
     const session = { id: c.mode === 'duplicate-session' ? c.installedBuild : randomUUID(), name: value('--name'), tags: [value('--tag')] };
     writeFileSync(join(process.cwd(), 'owned.json'), JSON.stringify(session));

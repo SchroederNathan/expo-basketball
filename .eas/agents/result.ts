@@ -23,7 +23,7 @@ const targetFields = {
   profile: z.literal('agent-preview'),
   environment: z.literal('preview'),
   fingerprint: z.string().regex(/^[a-f0-9]{40,64}$/),
-  runtime: z.literal('1.0.0'),
+  runtime: z.string().min(1),
   fixture: fixtureSchema,
   native: z.discriminatedUnion('kind', [
     z.strictObject({ kind: z.literal('built'), installed: buildIdSchema, sourceSha: shaSchema }),
