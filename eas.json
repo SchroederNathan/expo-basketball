@@ -16,6 +16,13 @@
       "channel": "preview",
       "environment": "preview"
     },
+    "simulator": {
+      "extends": "preview",
+      "ios": {
+        "simulator": true,
+        "buildConfiguration": "Release"
+      }
+    },
     "production": {
       "bun": "1.2.22",
       "autoIncrement": true,
