@@ -2,7 +2,24 @@
 
 Use the open source `e2e` runner alongside the four existing agent workflows. The manual [TesterArmy workflow](../.eas/workflows/testerarmy-ios.yml) checks the original Jordan issue on an exact iOS simulator build. The seeded app remains defective. Keep the repaired candidate and PR 4 separate from that seed.
 
-This integration has local synthetic verification. Real subscription entitlement, native accessibility locators, cloud cancellation, Linux execution, device media, and public e2e evidence still require authorized cloud proof. Synthetic screens are not a device reproduction.
+The integration is verified on EAS cloud iOS simulators with subscription authentication. The seeded app fails the two label checks, the repaired app passes all four checks, cached navigation replays without model calls, and the publisher embeds screenshots and video in PR 4.
+
+## Verified presentation runs
+
+These October 30, 2026 runs preserve the original fixture and issue criteria.
+
+| Demo stage | Verified result | Run or evidence |
+| --- | --- | --- |
+| Seeded app | Historical-points and unknown-stat FAIL; search-back and current-player PASS | [Seed run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18e40-eaae-7739-a8e4-d1ce316c4f0d) |
+| Repaired app | All four checks PASS | [Repair run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18e4d-20b2-704b-895f-6439e2a44deb) |
+| Repeated repaired app | Three fresh attempts PASS; final four navigation acts replay with zero model calls | [Replay run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18e5a-e1ab-71de-b37a-9a0d9d8bb58c) |
+| Public evidence | Complete delivery of six screenshots, unchanged recording, and labeled H.264 playback | [PR evidence](https://github.com/SchroederNathan/expo-basketball/pull/4#issuecomment-6532449683) and [publication run](https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/01a18e66-d7ad-7fcb-9bf4-bf04013fa87e) |
+
+The seeded source is `e8ed4e597397b4177fdf2d1c467aaf053444f8cb`. All repaired runs use `ab450ece5c3dccaede339b7c9333bbc696135fb7`. The three replay attempts share one installed build and each capture new assertions, screenshots, and recording. Replay replaces navigation model calls; it does not skip verification.
+
+All six attempts, including the seed, persisted subscription auth and independently confirmed their owned simulator STOPPED. Original media fully decoded, and anonymous public attachment hashes matched. The public comment rendered the expected images and native video controls. PR 4 remains open, preserving the seeded release for another demonstration.
+
+Original recordings contain duplicate timestamps, and some contain backward steps. Playback copies explicitly normalize timing and cannot prove elapsed task time. Actual token rotation and live cancellation recovery remain unverified. An earlier build-metadata command failure and intermittent local process-observer timeout remain unexplained; neither recurred in the successful proof sequence.
 
 ## Prepare the local tools
 

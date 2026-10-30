@@ -4,6 +4,8 @@ Show one game-day bug becoming a reviewable, device-tested PR. All four workflow
 
 ## Thirty-minute agenda
 
+For the TesterArmy version of this presentation, use the [verified e2e sequence](testerarmy-e2e.md#verified-presentation-runs) during the CI segment. Show the seeded failure, the same checks passing after repair, then four cached navigation acts with zero model calls. Open the [embedded PR evidence](https://github.com/SchroederNathan/expo-basketball/pull/4#issuecomment-6532449683) beside the test. This sequence complements the existing triage, coding, and QA Swarm examples.
+
 | Minutes | Show | Explain |
 | --- | --- | --- |
 | 0–4 | The seeded Jordan Vale profile bug and its issue | The app uses fixed synthetic data, so the reproduction is repeatable. |

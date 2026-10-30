@@ -2,6 +2,8 @@
 
 ## Verified demo reports
 
+The [TesterArmy e2e report](https://github.com/SchroederNathan/expo-basketball/pull/4#issuecomment-6532449683) adds six screenshots, the unchanged original recording, and labeled H.264 playback from repaired head `ab450ece5c3dccaede339b7c9333bbc696135fb7`. Its October 30 cloud run verified all four checks and complete public delivery. See the [seed, repair, and replay receipts](testerarmy-e2e.md#verified-presentation-runs).
+
 Fresh Linux EAS runs on October 29, 2026 published these complete reports automatically:
 
 | Workflow | Embedded evidence | EAS run |
