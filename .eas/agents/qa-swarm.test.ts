@@ -46,7 +46,7 @@ async function scenario(mode: string, inspect: (context: { options: SwarmOptions
   const fixtureDigest = digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json')));
   const config = join(root, 'config.json');
   const log = join(root, 'log.jsonl');
-  await writeFile(config, JSON.stringify({ root, mode, sha, fixtureDigest, log, mediaDirectory, installedBuild, nativeBuild }));
+  await writeFile(config, JSON.stringify({ root, mode, sha, fixtureDigest, runtime: JSON.parse(await readFile(join(cwd, 'app.json'), 'utf8')).expo.version, log, mediaDirectory, installedBuild, nativeBuild }));
   const seed = join(root, 'seed.json');
   await writeFile(seed, JSON.stringify(fakeAuth));
   const api = createServer((request, response) => {

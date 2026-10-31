@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { preflight } from '../preflight';
 import { command, safeEnvironment, succeeded, type Command } from '../process';
 import { buildIdSchema, publishFile, sanitize, shaSchema, targetSchema, type Target } from '../result';
-import { verifyBuild, writeSimulatorProject } from '../simulator';
+import { readAppRuntime, verifyBuild, writeSimulatorProject } from '../simulator';
 import { evidencePhase } from '../evidence-phase';
 import { prepareEvidenceWriter, type EvidenceWriter } from '../evidence-tools';
 import { finalizeSubscription, oauthSchema, persistSubscription, runnerEnvironment, seedSubscription, subscriptionConfig } from './auth';
@@ -111,7 +111,7 @@ export async function executeTesterArmy(options: Options) {
     target = targetSchema.parse({ kind: 'acceptance', issue: prepared.issue.identity,
       controller: prepared.request.source, source: prepared.request.source, repository: prepared.request.repository, pullRequest: prepared.request.pullRequest,
       platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview', fingerprint: options.env.AGENT_FINGERPRINT,
-      runtime: '1.0.0', fixture: prepared.demoFixture, criteria: prepared.criteria, bundle: { kind: 'embedded', candidate: prepared.request.source.sha },
+      runtime: await readAppRuntime(options.cwd), fixture: prepared.demoFixture, criteria: prepared.criteria, bundle: { kind: 'embedded', candidate: prepared.request.source.sha },
       native: options.env.AGENT_NATIVE_SOURCE_BUILD_ID ? { kind: 'repacked', installed, source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID),
         sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA) } : { kind: 'built', installed, sourceSha: prepared.request.source.sha },
     });

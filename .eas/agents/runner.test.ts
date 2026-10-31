@@ -281,6 +281,11 @@ async function scenario(kind: string, inspect: (context: { options: CheckOptions
   for (const name of ['demo/fixtures/prizepicks-v1.json', '.eas/agents/check-ios.md', '.eas/agents/issue-ios.md', 'demo/issues/player-label.md', 'app.json', 'package.json']) {
     await copyFile(resolve(name), join(cwd, name));
   }
+  if (kind === 'runtime-version') {
+    const app = JSON.parse(await readFile(join(cwd, 'app.json'), 'utf8'));
+    app.expo.version = '9.8.7';
+    await writeFile(join(cwd, 'app.json'), JSON.stringify(app));
+  }
   const git = (args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
   git(['init', '-b', 'candidate']);
   git(['add', '.']);
@@ -293,7 +298,8 @@ async function scenario(kind: string, inspect: (context: { options: CheckOptions
   const log = join(root, 'commands.jsonl');
   const seed = join(root, 'seed.json');
   await writeFile(seed, JSON.stringify(fakeAuth));
-  const configuration = { root, kind, sha, fixtureDigest, mediaDirectory, installedBuild, nativeBuild, sessionId, log };
+  const runtime = JSON.parse(await readFile(join(cwd, 'app.json'), 'utf8')).expo.version;
+  const configuration = { root, kind, sha, fixtureDigest, runtime, mediaDirectory, installedBuild, nativeBuild, sessionId, log };
   const fake = join(root, 'fake.mjs');
   await writeFile(fake, `
 import { appendFileSync, copyFileSync, readFileSync, writeFileSync } from 'node:fs';
@@ -307,7 +313,7 @@ if (tool === 'eas') {
     if (c.kind === 'auth-write-back-failed' && readFileSync(args[args.indexOf('--value')+1], 'utf8').includes('refreshed')) process.exit(1);
     copyFileSync(args[args.indexOf('--value')+1], join(c.root, 'persisted.json'));
     out({ok:true});
-  } else if (args[0] === 'build:view') out({id:args[1],status:'FINISHED',platform:'IOS',buildProfile:'agent-preview',isForIosSimulator:true,appIdentifier:'dev.expo.basketball',gitCommitHash:c.kind === 'build-sha-mismatch' ? 'b'.repeat(40) : args[1] === c.nativeBuild ? 'c'.repeat(40) : c.sha,fingerprint:{hash:'a'.repeat(40)},runtime:{version:'1.0.0'}});
+  } else if (args[0] === 'build:view') out({id:args[1],status:'FINISHED',platform:'IOS',buildProfile:'agent-preview',isForIosSimulator:true,appIdentifier:'dev.expo.basketball',gitCommitHash:c.kind === 'build-sha-mismatch' ? 'b'.repeat(40) : args[1] === c.nativeBuild ? 'c'.repeat(40) : c.sha,fingerprint:{hash:'a'.repeat(40)},runtime:{version:c.kind === 'build-runtime-mismatch' ? '0.0.0' : c.runtime}});
   else if (args[0] === 'simulator:start') {
     writeFileSync(join(c.root,'owned.json'),JSON.stringify({name:args[args.indexOf('--name')+1],tag:args[args.indexOf('--tag')+1]}));
     if (c.kind === 'partial-start') await new Promise(r=>setTimeout(r,30000));
@@ -320,7 +326,7 @@ if (tool === 'eas') {
 } else if (tool === 'device') {
   if (args[0] === 'wait') {
     const label = JSON.parse(args[1].slice('label='.length));
-    if (label !== 'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime=1.0.0 bundle=embedded') process.exit(4);
+    if (label !== 'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime='+c.runtime+' bundle=embedded') process.exit(4);
   }
   if (args[0] === 'record' && args[1] === 'start') writeFileSync(join(c.root,'recording-path'),args[2]);
   else if (args[0] === 'record' && args[1] === 'stop' && c.kind !== 'missing-recording') {
@@ -329,7 +335,7 @@ if (tool === 'eas') {
     else copyFileSync(join(c.mediaDirectory,'clip.mp4'),destination);
   }
   else if (args[0] === 'screenshot') copyFileSync(join(c.mediaDirectory,'screen.png'),args[1]);
-  if(args[0] === 'snapshot') out({label:'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime=1.0.0 bundle='+(c.kind==='wrong-bundle'?'ota':'embedded'),text:'Orbits 100 Comets 108 Final'});
+  if(args[0] === 'snapshot') out({label:'Lob demo prizepicks-v1 source='+c.sha+' fixture='+c.fixtureDigest+' runtime='+c.runtime+' bundle='+(c.kind==='wrong-bundle'?'ota':'embedded'),text:'Orbits 100 Comets 108 Final'});
   else out({ok:true});
 } else if (tool === 'codex') {
   const authPath=join(process.env.CODEX_HOME,'auth.json');
@@ -420,7 +426,7 @@ test('strict verdict rejects prefixes, duplicate checks, extra keys, and disagre
 test('complete local fake-executable run requires decodable evidence and persists refreshed credentials', { timeout: 15_000 }, async () => {
   await scenario('pass', async ({ options, root, log, seed }) => {
     const result = await executeCheck(options);
-    assert.equal(result.state, 'PASS');
+    assert.equal(result.state, 'PASS', result.state === 'INCONCLUSIVE' ? result.reason : '');
     assert.equal(result.cleanup.state, 'stopped');
     assert.equal(result.auth, 'persisted');
     assert.equal(JSON.parse(await readFile(join(root, 'persisted.json'), 'utf8')).tokens.refresh_token, 'refreshed-synthetic-token');
@@ -436,6 +442,14 @@ test('complete local fake-executable run requires decodable evidence and persist
     const second = await executeCheck(options);
     assert.notEqual(second.attemptId, result.attemptId);
     assert.equal(second.state, 'PASS');
+  });
+});
+
+test('native build checks follow the candidate app version', { timeout: 15_000 }, async () => {
+  await scenario('runtime-version', async ({ options }) => {
+    const result = await executeCheck(options);
+    assert.equal(result.state, 'PASS', result.state === 'INCONCLUSIVE' ? result.reason : '');
+    assert.equal(result.target?.runtime, '9.8.7');
   });
 });
 
@@ -457,7 +471,7 @@ for (const kind of ['malformed-verdict', 'missing-screenshot', 'missing-recordin
   });
 }
 
-for (const kind of ['untrusted-repo', 'build-sha-mismatch', 'source-sha-mismatch', 'fork-pr', 'pr-head-mismatch', 'target-without-baseline']) {
+for (const kind of ['untrusted-repo', 'build-sha-mismatch', 'build-runtime-mismatch', 'source-sha-mismatch', 'fork-pr', 'pr-head-mismatch', 'target-without-baseline']) {
   test(`${kind} fails before credentials or simulator startup`, { timeout: 15_000 }, async () => {
     await scenario(kind, async ({ options, log }) => {
       if (kind === 'source-sha-mismatch') options.env.AGENT_SOURCE_SHA = 'b'.repeat(40);
@@ -477,7 +491,7 @@ for (const kind of ['untrusted-repo', 'build-sha-mismatch', 'source-sha-mismatch
 test('the explicitly approved public repository passes the same trusted source checks', { timeout: 15_000 }, async () => {
   await scenario('public-repo', async ({ options }) => {
     const result = await executeCheck(options);
-    assert.equal(result.state, 'PASS');
+    assert.equal(result.state, 'PASS', result.state === 'INCONCLUSIVE' ? result.reason : '');
   });
 });
 
@@ -493,7 +507,7 @@ test('a repack keeps native source identity distinct from the embedded candidate
     options.env.AGENT_NATIVE_SOURCE_BUILD_ID = nativeBuild;
     options.env.AGENT_NATIVE_SOURCE_SHA = 'c'.repeat(40);
     const result = await executeCheck(options);
-    assert.equal(result.state, 'PASS');
+    assert.equal(result.state, 'PASS', result.state === 'INCONCLUSIVE' ? result.reason : '');
     assert.equal(result.target.native.kind, 'repacked');
     assert.equal(result.target.bundle.candidate, options.env.AGENT_SOURCE_SHA);
     assert.notEqual(result.target.native.sourceSha, result.target.bundle.candidate);

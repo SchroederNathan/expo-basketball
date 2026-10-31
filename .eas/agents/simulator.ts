@@ -14,6 +14,13 @@ const startSchema = z.object({
 const stoppedSchema = z.object({ id: z.uuid(), status: z.literal('STOPPED') });
 const listSchema = z.object({ sessions: z.array(z.object({ id: z.uuid(), name: z.string(), tags: z.array(z.string()) })) });
 
+export async function readAppRuntime(directory: string): Promise<string> {
+  const { expo } = z.object({
+    expo: z.object({ version: z.string().min(1) }),
+  }).parse(await readJson(join(directory, 'app.json')));
+  return expo.version;
+}
+
 export async function writeSimulatorProject(sourceDirectory: string, directory: string) {
   const { expo } = z.object({ expo: z.object({
     name: z.string().min(1), slug: z.string().min(1), owner: z.string().min(1),
@@ -93,7 +100,7 @@ const buildSchema = z.object({
   buildProfile: z.literal('agent-preview'), isForIosSimulator: z.literal(true),
   appIdentifier: z.literal('dev.expo.basketball'),
   gitCommitHash: z.string(), fingerprint: z.object({ hash: z.string() }),
-  runtime: z.object({ version: z.literal('1.0.0') }),
+  runtime: z.object({ version: z.string().min(1) }),
   project: z.object({ id: z.uuid() }).optional(),
   projectId: z.uuid().optional(),
   app: z.object({ id: z.uuid() }).optional(),
@@ -118,6 +125,7 @@ export async function verifyBuild({ target, eas, cwd, env, projectId }: { target
     const build = buildSchema.parse(JSON.parse(result.stdout));
     if (build.id !== id || build.fingerprint.hash !== target.fingerprint) throw new Error('Build or fingerprint mismatch.');
     if (projectId && (build.project && build.project.id !== projectId || build.projectId && build.projectId !== projectId || build.app && build.app.id !== projectId)) throw new Error('Build project mismatch.');
+    if (build.runtime.version !== target.runtime) throw new Error('Build runtime differs from the candidate.');
     return build;
   };
   const installed = await read(target.native.installed);

@@ -17,7 +17,7 @@ import { prepareQaTools, qaToolPins, QaToolPreparationError, type PreparedQaTool
 import { laneIds, lanePrompt, laneVerdictSchema, type LaneId, type LaneVerdict } from './qa-lanes';
 import { admitFile, buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema,
   type Cleanup, type FileRef, type Session, type Target, type Termination } from './result';
-import { identityLabel, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
+import { identityLabel, readAppRuntime, Simulator, verifyBuild, writeSimulatorProject } from './simulator';
 
 const mediaTools: Record<'ffprobe' | 'ffmpeg', Command> = { ffprobe: { file: 'ffprobe', args: [] },
   ffmpeg: { file: 'ffmpeg', args: [] } };
@@ -121,7 +121,7 @@ export async function executeSwarm(options: SwarmOptions) {
     target = targetSchema.parse({ kind: 'check', issue: null, controller: prepared.request.source, source: prepared.request.source,
       repository: prepared.request.repository, pullRequest: prepared.request.pullRequest, platform: 'ios',
       appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview', fingerprint: options.env.AGENT_FINGERPRINT,
-      runtime: '1.0.0', fixture: prepared.demoFixture,
+      runtime: await readAppRuntime(options.cwd), fixture: prepared.demoFixture,
       criteria: { path: '.eas/agents/check-ios.md', sha256: digest(await readFile(join(options.cwd, '.eas/agents/check-ios.md'))) },
       native: options.env.AGENT_NATIVE_SOURCE_BUILD_ID
         ? { kind: 'repacked', source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID),
