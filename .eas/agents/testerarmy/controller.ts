@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { preflight } from '../preflight';
 import { command, safeEnvironment, succeeded, type Command } from '../process';
-import { buildIdSchema, publishFile, sanitize, shaSchema, targetSchema, type Target } from '../result';
+import { buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema, type Target } from '../result';
 import { verifyBuild, writeSimulatorProject } from '../simulator';
 import { evidencePhase } from '../evidence-phase';
 import { prepareEvidenceWriter, type EvidenceWriter } from '../evidence-tools';
@@ -14,8 +14,8 @@ import { finalizeSubscription, oauthSchema, persistSubscription, runnerEnvironme
 import { contextSchema } from './context';
 import { publishTesterArmyEvidence } from './evidence';
 import { projectId, readLedger, reconcileOwned, sessionControl, type Cleanup, type Ledger } from './provider';
-import { admitEvidence, admitReport, verifyReplay } from './report';
-import { publicationStatus, testerArmyResultSchema, toolVersions, type TesterArmyResultV1 } from './result';
+import { admitEvidence, admitReport, diagnoseReport, verifyReplay } from './report';
+import { diagnosticSchema, publicationStatus, testerArmyResultSchema, toolVersions, type TesterArmyResultV1 } from './result';
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url));
 const eas: Command = { file: 'bunx', args: ['eas-cli@25.3.0'] };
@@ -94,6 +94,8 @@ export async function executeTesterArmy(options: Options) {
   let execution: Parameters<typeof finalizeSubscription>[0]['execution'] = 'not-started';
   let termination: TesterArmyResultV1['termination'] = { kind: 'not-started' };
   let admission: ReturnType<typeof admitReport> | null = null;
+  let rawReport: unknown;
+  let account: string | null = null;
   let evidence: TesterArmyResultV1['evidence'] = null;
   let writer: EvidenceWriter | null = null;
   let problem = '';
@@ -136,7 +138,8 @@ export async function executeTesterArmy(options: Options) {
       forced: run.observation.cleanup.forced || run.termination.kind !== 'exited',
       shutdownConfirmed: run.observation.cleanup.confirmed && run.observation.cleanup.rootExited && run.observation.cleanup.streamsClosed && run.observation.cleanup.liveProcesses === 0 };
     ledger = await readLedger(ledgerFile);
-    admission = admitWorkerReport(run, JSON.parse(await readFile(join(task, 'output/report.json'), 'utf8')), ledger, target);
+    rawReport = JSON.parse(await readFile(join(task, 'output/report.json'), 'utf8'));
+    admission = admitWorkerReport(run, rawReport, ledger, target);
     execution = 'completed';
   } catch (error) {
     problem = error instanceof z.ZodError ? 'Strict controller input or lifecycle validation failed.' : sanitize(error instanceof Error ? error.message : 'e2e execution failed.', secrets);
@@ -147,6 +150,7 @@ export async function executeTesterArmy(options: Options) {
       try {
         const refreshed = oauthSchema.parse(JSON.parse(await readFile(authFile, 'utf8')));
         secrets.push(refreshed.openai.access, refreshed.openai.refresh);
+        account = refreshed.openai.accountId ? digest(refreshed.openai.accountId).slice(0, 12) : null;
       } catch {}
       auth = await finalizeSubscription({ file: authFile, eas, cwd: options.cwd, env: options.env, execution });
     }
@@ -168,7 +172,8 @@ export async function executeTesterArmy(options: Options) {
     runUrl: options.env.AGENT_RUN_URL, startedAt, finishedAt: new Date().toISOString(), target, lease: ledger,
     framework: admission?.framework ?? null, checks: admission?.checks ?? [], evidence, cleanup, auth, termination, tools: toolVersions };
   const result = testerArmyResultSchema.parse({ ...base, state: !problem && admission && evidence ? admission.state : 'INCONCLUSIVE',
-    ...(!problem && admission && evidence ? {} : { reason: problem || 'No admitted deterministic result.' }) });
+    ...(!problem && admission && evidence ? {} : { reason: problem || 'No admitted deterministic result.',
+      diagnostic: diagnosticSchema.safeParse({ ...diagnoseReport(rawReport), account }).data ?? null }) });
   await mkdir(root, { recursive: true, mode: 0o700 });
   await publishFile({ directory: root, name: 'result.json', bytes: JSON.stringify(result, null, 2) });
   await publishFile({ directory: root, name: 'report.md', bytes: `# TesterArmy e2e iOS\n\n${result.state}\n\n${result.checks.map((check) => `- ${check.id}. ${check.state}. ${check.detail}`).join('\n')}\n\n${result.state === 'INCONCLUSIVE' ? result.reason : ''}\n\nCleanup ${cleanup.state}. Subscription ${auth}.\n` });

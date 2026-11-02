@@ -25,8 +25,8 @@ try {
   await list({ cwd: directory, config: join(directory, 'loader.config.ts') });
   const { finalizeSubscription, oauthSchema, seedSubscription, persistSubscription, subscriptionConfig, runnerEnvironment } = await import('./auth.ts');
   const { ownedProvider, reconcileOwned, ledgerSchema, readLedger } = await import('./provider.ts');
-  const { admitReport, admitEvidence, artifactBytes, parseReport, verifyReplay } = await import('./report.ts');
-  const { testerArmyResultSchema, toolVersions, publicationStatus } = await import('./result.ts');
+  const { admitReport, admitEvidence, artifactBytes, diagnoseReport, parseReport, verifyReplay } = await import('./report.ts');
+  const { diagnosticSchema, testerArmyResultSchema, toolVersions, publicationStatus } = await import('./result.ts');
   const { stageTesterArmyEvidence } = await import('./evidence.ts');
   const { targetSchema, digest } = await import('../result.ts');
   const { identityLabel, verifyBuild } = await import('../simulator.ts');
@@ -244,6 +244,22 @@ try {
     await assert.rejects(artifactBytes(artifactsRoot,artifact,Date.parse(before)));await rm(originalPath);await copyFile(backup,originalPath);await utimes(originalPath,new Date(0),new Date(0));
     await assert.rejects(artifactBytes(artifactsRoot,artifact,Date.parse(before)));
     outcomes.push({mode,status:outcome.status,exitCode:outcome.exitCode,checks:admission.checks.map(({id,state})=>({id,state}))});
+  }
+  {
+    process.env.FAKE_MODE='provider-failed';process.env.FAKE_SECRET='synthetic-provider-canary-token';
+    const before=new Date(Date.now()-2).toISOString();
+    await rm(join(directory,'cache'),{recursive:true,force:true});
+    const outcome=await run({cwd:directory,config,files:['tests/jordan.e2e.ts']});
+    const leaseLedger=ledgerSchema.parse({...ledger,runId:outcome.report.run.id,requestedAt:before,readyAt:before});
+    verify(outcome.exitCode===3,'A genuine model provider failure exits 3.');
+    assert.throws(()=>admitReport(outcome.report,leaseLedger,target,outcome.exitCode));counters.assertions++;
+    const diagnostic=diagnosticSchema.parse({...diagnoseReport(outcome.report),account:digest('synthetic-account').slice(0,12)});
+    const serialized=JSON.stringify(diagnostic);
+    verify(diagnostic.runStatus==='error'&&diagnostic.errors.some(e=>e.source==='attempt'&&e.code==='MODEL_PROVIDER_FAILED'&&e.category==='infrastructure'&&e.status===429&&e.kind==='usage-limit')&&diagnostic.errors.some(e=>e.source==='step'&&e.api==='agent.act'),'Unadmitted provider failure names its code, status, and kind.');
+    verify(!serialized.includes('synthetic-provider-canary-token')&&!serialized.includes('usage limit')&&!serialized.includes('synthetic-account'),'Diagnostic carries no message text, token, or raw account ID.');
+    verify(diagnoseReport({schemaVersion:'report-future'}).errors.length===0&&diagnoseReport(undefined).runStatus===null,'Malformed or missing reports produce an empty diagnostic.');
+    verify(testerArmyResultSchema.safeParse({version:1,engine:'testerarmy-e2e',state:'INCONCLUSIVE',reason:'e2e report selection, runtime, lifecycle, or identity is not admitted.',attemptId,runId:uuid('5'),runUrl:`https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/${uuid('5')}`,startedAt:before,finishedAt:new Date().toISOString(),termination:{kind:'not-started'},cleanup:{state:'not-needed'},auth:'not-loaded',tools:toolVersions,target:null,framework:null,lease:null,checks:[],evidence:null,diagnostic}).success,'INCONCLUSIVE results accept the closed diagnostic.');
+    delete process.env.FAKE_SECRET;
   }
   const acceptedLabels=[];
   for(const [mode,label,expected] of [['omitted',undefined,'PASS'],['other-label','Usage 4.2','PASS'],['bare-unknown','4.2','FAIL'],['blank-prefix','   4.2, ranked 2nd','FAIL']]) {

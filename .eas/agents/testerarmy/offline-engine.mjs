@@ -1,6 +1,7 @@
 import { copyFile, mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { defineEngine, resolveExpression } from 'e2e/engine';
+import { AgentError } from 'e2e/agent';
 
 export function offlineEngine() {
   let page = 0, directory, startedAt, sequence = 0;
@@ -36,6 +37,7 @@ export function offlineEngine() {
 
 export const offlineExecutor = { name: 'synthetic-no-model', version: '1',
   async runStep(context) {
+    if (process.env.FAKE_MODE === 'provider-failed') throw new AgentError('MODEL_PROVIDER_FAILED', `429 You've hit your usage limit. ${process.env.FAKE_SECRET}`);
     const observation = await context.observe({ tree: true });
     const target = observation.tree.children.find((node) => node.name === 'Navigate next');
     await context.actions.tap({ id: target.id });

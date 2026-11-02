@@ -11,6 +11,12 @@ export const checkSchema = z.strictObject({ id: z.enum(checkIds), state: z.enum(
 export const frameworkSchema = z.strictObject({ runId: z.string().min(1), testId: z.string().min(1),
   attemptId: z.string().min(1), resultId: z.string().min(1), status: z.enum(['passed', 'failed']), exitCode: z.union([z.literal(0), z.literal(1)]),
 });
+export const failureKinds = ['usage-limit', 'auth', 'rate-limit', 'overloaded', 'timeout', 'network', 'server', 'bad-request', 'other'] as const;
+export const diagnosticSchema = z.strictObject({ runStatus: z.string().regex(/^[a-z-]{1,32}$/).nullable(), account: z.string().regex(/^[a-f0-9]{12}$/).nullable(),
+  errors: z.array(z.strictObject({ source: z.enum(['run', 'attempt', 'secondary', 'step']), api: z.string().regex(/^[a-z][A-Za-z.]{0,63}$/).nullable(),
+    code: z.string().regex(/^[A-Z][A-Z0-9_]{0,63}$/), category: z.enum(['test', 'configuration', 'infrastructure', 'internal', 'interrupted']),
+    retryable: z.boolean(), status: z.number().int().min(400).max(599).nullable(), kind: z.enum(failureKinds) })).max(8),
+});
 const evidenceSchema = z.strictObject({ identity: fileSchema, report: fileSchema, screenshots: z.array(fileSchema).length(6), recording: fileSchema });
 const fields = {
   version: z.literal(1), engine: z.literal('testerarmy-e2e'), attemptId: z.uuid(), runId: z.uuid(), runUrl: z.string(),
@@ -30,7 +36,7 @@ export const testerArmyResultSchema = z.discriminatedUnion('state', [
   z.strictObject({ ...definitive, state: z.literal('PASS') }),
   z.strictObject({ ...definitive, state: z.literal('FAIL') }),
   z.strictObject({ ...fields, state: z.literal('INCONCLUSIVE'), reason: z.string().min(1), target: targetSchema.nullable(),
-    framework: frameworkSchema.nullable(), lease: ledgerSchema.nullable(), checks: z.array(checkSchema), evidence: evidenceSchema.nullable() }),
+    framework: frameworkSchema.nullable(), lease: ledgerSchema.nullable(), checks: z.array(checkSchema), evidence: evidenceSchema.nullable(), diagnostic: diagnosticSchema.nullable().optional() }),
 ]).superRefine((value, ctx) => {
   if (value.runUrl !== `https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/${value.runId}`) {
     ctx.addIssue({ code: 'custom', message: 'Workflow URL must bind the exact run and project.' });

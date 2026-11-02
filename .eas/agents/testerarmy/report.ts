@@ -11,7 +11,7 @@ import { digest, publishFile, sanitize, type Target } from '../result';
 import { identityLabel } from '../simulator';
 import { probeMedia } from '../evidence-media';
 import { evidencePhase, type EvidencePhase } from '../evidence-phase';
-import { checkIds, checkSchema, frameworkSchema, originalCriteriaSha256, originalFixtureSha256 } from './result';
+import { checkIds, checkSchema, failureKinds, frameworkSchema, originalCriteriaSha256, originalFixtureSha256 } from './result';
 import { type Ledger } from './provider';
 
 const require = createRequire(import.meta.url);
@@ -30,6 +30,26 @@ export function verifyReplay(input: unknown) {
     throw new Error('Replay proof requires four self-finalized navigation acts with replayed actions and zero model calls.');
   }
   return acts.map((step) => ({ id: step.id, cache: step.cache, modelCalls: step.metrics?.modelCalls }));
+}
+// Message text can carry provider or credential detail, so only the kind it matches leaves the private directory.
+const kindPatterns: [typeof failureKinds[number], RegExp][] = [['usage-limit', /usage.?limit/i],
+  ['auth', /\b(?:401|403|unauthori[sz]ed|forbidden|credentials?|authentication)\b/i], ['rate-limit', /\b(?:429|rate.?limits?|quota|too many requests)\b/i],
+  ['overloaded', /\b(?:529|503|overloaded|capacity|service unavailable)\b/i], ['timeout', /\b(?:timed?\s?out|timeouts?|ETIMEDOUT)\b/i],
+  ['network', /\b(?:ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|fetch failed|socket hang up|network)\b/i],
+  ['server', /\b(?:5\d\d|internal server error|bad gateway)\b/i], ['bad-request', /\b(?:400|404|422|bad request|invalid request|not found)\b/i]];
+export function diagnoseReport(input: unknown) {
+  let report: Report;
+  try { report = parseReport(input); } catch { return { runStatus: null, errors: [] }; }
+  type Source = { source: 'run' | 'attempt' | 'secondary' | 'step'; api: string | null; error: Report['run']['errors'][number] };
+  const sources: Source[] = [...report.run.errors.map((error): Source => ({ source: 'run', api: null, error })),
+    ...report.run.results.flatMap((result) => result.attempts.flatMap((attempt): Source[] => [
+      ...(attempt.error ? [{ source: 'attempt' as const, api: null, error: attempt.error }] : []),
+      ...attempt.secondaryErrors.map((error): Source => ({ source: 'secondary', api: null, error })),
+      ...attempt.steps.flatMap((step): Source[] => step.error ? [{ source: 'step', api: step.api, error: step.error }] : []),
+    ]))];
+  return { runStatus: report.run.status, errors: sources.slice(0, 8).map(({ source, api, error }) => ({ source, api, code: error.code,
+    category: error.category, retryable: error.retryable, status: Number(error.message.match(/\b[45]\d\d\b/)?.[0]) || null,
+    kind: kindPatterns.find(([, pattern]) => pattern.test(error.message))?.[0] ?? 'other' })) };
 }
 type Attempt = Report['run']['results'][number]['attempts'][number];
 type Step = Attempt['steps'][number];

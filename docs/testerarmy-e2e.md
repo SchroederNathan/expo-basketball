@@ -118,7 +118,7 @@ The seed must fail the real exact `PTS 18.5, ranked 3rd` assertion on Jordan. An
 
 The unknown-stat assertion accepts omission or a safe nonempty label for `4.2`, including `Stat 4.2` and other labels. It rejects a bare numeric label, including whitespace or rank text without a stat name, and duplicate matching tiles. Jordan identity and the other stat and navigation checks still apply. Device evidence cannot prove React key uniqueness. Retain the repaired app's source-level behavior test for keys.
 
-Native search uses `Teams and players`. The search result is `Jordan Vale, Comets · Guard`. These source-grounded locators still need inspection on the cloud iOS accessibility tree. Missing player destinations, timeouts, skipped or repeated tests, provider errors, missing media, uncertain cleanup, or uncertain auth are INCONCLUSIVE.
+Native search uses `Teams and players`. The search result is `Jordan Vale, Comets · Guard`. These source-grounded locators still need inspection on the cloud iOS accessibility tree. Missing player destinations, timeouts, skipped or repeated tests, provider errors, missing media, uncertain cleanup, or uncertain auth are INCONCLUSIVE. An INCONCLUSIVE `result.json` includes a `diagnostic` with the runner status, a 12-character account fingerprint, and each runner error's code, category, HTTP status, and fixed kind, such as `MODEL_PROVIDER_FAILED`, `429`, and `usage-limit`. It never copies error text or tokens.
 
 ## Verify repeated repaired runs and cached replay
 
