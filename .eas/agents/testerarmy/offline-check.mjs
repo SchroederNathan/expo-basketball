@@ -261,6 +261,27 @@ try {
     verify(testerArmyResultSchema.safeParse({version:1,engine:'testerarmy-e2e',state:'INCONCLUSIVE',reason:'e2e report selection, runtime, lifecycle, or identity is not admitted.',attemptId,runId:uuid('5'),runUrl:`https://expo.dev/accounts/exponathan/projects/expo-basketball/workflows/${uuid('5')}`,startedAt:before,finishedAt:new Date().toISOString(),termination:{kind:'not-started'},cleanup:{state:'not-needed'},auth:'not-loaded',tools:toolVersions,target:null,framework:null,lease:null,checks:[],evidence:null,diagnostic}).success,'INCONCLUSIVE results accept the closed diagnostic.');
     delete process.env.FAKE_SECRET;
   }
+  {
+    const { APICallError, generateText } = await import('ai');
+    const { MockLanguageModelV4 } = await import('ai/test');
+    const { retryOverload } = await import('./model.ts');
+    const reply={content:[{type:'text',text:'ok'}],finishReason:{unified:'stop',raw:'stop'},warnings:[],
+      usage:{inputTokens:{total:1,noCache:1,cacheRead:0,cacheWrite:0},outputTokens:{total:1,text:1,reasoning:0}}};
+    const flaky=(message,status=400)=>{const model=new MockLanguageModelV4({provider:'chatgpt',modelId:'gpt-6.1-sol',doGenerate:async()=>{
+      if(model.doGenerateCalls.length===1)throw new APICallError({message,url:'https://synthetic.invalid/responses',requestBodyValues:{},statusCode:status,responseBody:JSON.stringify({error:{message}})});
+      return reply;}});return model;};
+    const overload='Our servers are currently overloaded. Please try again later.';
+    const plain=flaky(overload);
+    await assert.rejects(generateText({model:plain,prompt:'go',maxRetries:5}));
+    verify(plain.doGenerateCalls.length===1,'Unwrapped, the folded 400 overload is never retried.');
+    const wrapped=flaky(overload),result=await generateText({model:retryOverload(wrapped),prompt:'go',maxRetries:5});
+    verify(result.text==='ok'&&wrapped.doGenerateCalls.length===2,'Wrapped, a folded 400 overload retries through the SDK backoff and succeeds.');
+    const invalid=flaky('Invalid value for reasoning effort.');
+    await assert.rejects(generateText({model:retryOverload(invalid),prompt:'go',maxRetries:5}));
+    verify(invalid.doGenerateCalls.length===1,'Other 400 errors still fail at once.');
+    const named=retryOverload(flaky(overload));
+    verify(named.provider==='chatgpt'&&named.modelId==='gpt-6.1-sol','The wrapper keeps the provider and model identity.');
+  }
   const acceptedLabels=[];
   for(const [mode,label,expected] of [['omitted',undefined,'PASS'],['other-label','Usage 4.2','PASS'],['bare-unknown','4.2','FAIL'],['blank-prefix','   4.2, ranked 2nd','FAIL']]) {
     await rm(join(directory,'cache'),{recursive:true,force:true});

@@ -3,6 +3,7 @@ import { chatgpt } from 'e2e/oauth/chatgpt';
 import { mobile } from '@e2e-dev/mobile';
 import { easSimulators } from '@e2e-dev/eas';
 import { runtimeContext } from './context';
+import { retryOverload } from './model';
 import { ownedProvider, projectId } from './provider';
 
 const context = runtimeContext();
@@ -15,7 +16,7 @@ export default {
       { attemptId: context.attemptId, ledgerFile: context.ledgerFile }),
     }),
   }],
-  agents: { default: { model: chatgpt('gpt-6.1-sol'), providerOptions: { openai: { reasoningEffort: 'xhigh' } },
+  agents: { default: { model: retryOverload(chatgpt('gpt-6.1-sol')), providerOptions: { openai: { reasoningEffort: 'xhigh' } },
     maxSteps: 20, maxModelCalls: 20,
     context: 'Navigate the installed synthetic NBA app only. Use semantic controls. Do not manage sessions, credentials, files, or publication. Assertions in the test judge the app.',
   } },
