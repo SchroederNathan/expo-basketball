@@ -126,7 +126,7 @@ After an ordinary repaired PASS, dispatch that unchanged repaired candidate with
 
 Inspect `cache-proof.json`. VERIFIED requires all three passes to succeed on the same source and installed artifact. The final run must show four `agent.act` steps with `cache.mode=self-finalized`, replayed actions, and zero model calls. Strict cache alone is insufficient because missing entries can still invoke the agent. A live fallback keeps the device observation but makes the cache proof INCONCLUSIVE.
 
-The ordinary workflow uses no action cache. The replay unit does not reuse previous screenshots or recordings. This mode is implemented locally; no cloud replay result is claimed yet.
+The ordinary workflow uses no action cache. The replay unit does not reuse previous screenshots or recordings. The Oct 30 replay run in the verified runs table proves this mode in the cloud.
 
 ## Publish the PR evidence
 
