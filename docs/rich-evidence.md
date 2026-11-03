@@ -24,7 +24,7 @@ The historical [original reproduction](https://github.com/SchroederNathan/expo-b
 
 CI, triage, and QA use one controller publisher after their cleanup and subscription finalizers. The observed `result.json` stays unchanged. A separate delivery receipt records verified asset URLs, hashes, the exact comment ID, the writer ID, and GitHub rendering signals.
 
-A PR destination or triage issue makes publication required. `status.json` reports `INCONCLUSIVE` when delivery is partial or unavailable and preserves the device verdict in `observed_state`. Manual checks and QA without a destination retain artifacts only. CI's existing bot comment links the new evidence comment. The publisher never edits the bot's comment, the PR body, or its original acceptance receipt.
+A PR destination or triage issue makes publication required. `status.json` reports `INCONCLUSIVE` when delivery is partial or unavailable and preserves the device verdict in `observed_state`. Manual checks and QA without a destination retain artifacts only. The evidence comment carries the verdict, so a run posts one comment. It opens with the verdict and reason, then a check table, folded run receipts, and the media. CI's bot comment posts only when the evidence comment is not published. The publisher never edits the bot's comment, the PR body, or its original acceptance receipt.
 
 ## Admission and playback
 

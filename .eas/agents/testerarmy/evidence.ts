@@ -55,9 +55,9 @@ export async function stageTesterArmyEvidence({ result: input, root, directory, 
     workflow: 'testerarmy', runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target,
     destination: { kind: 'pr', repository: target.repository, number: target.pullRequest }, slots,
     summary: [`Framework run ${result.framework.runId}. Test ${result.framework.testId}. Attempt ${result.framework.attemptId}. Actual exit ${result.termination.kind === 'observed' ? result.termination.exitCode : 'unavailable'}.`,
-      `EAS session ${result.lease.sessionId}. Cleanup ${result.cleanup.state}. Subscription ${result.auth}.`,
-      ...result.checks.map((check) => `Deterministic check ${check.id}. ${check.state}. ${check.detail}`),
-      ...(result.state === 'INCONCLUSIVE' ? [`INCONCLUSIVE partial observation. ${result.reason}`] : [])] };
+      `EAS session ${result.lease.sessionId}. Cleanup ${result.cleanup.state}. Subscription ${result.auth}.`],
+    checks: result.checks.map((check) => ({ lane: 'ios', id: check.id, state: check.state, detail: check.detail })),
+    reason: result.state === 'INCONCLUSIVE' ? result.reason : null };
 }
 
 export async function publishTesterArmyEvidence({ result, root, directory, cwd, env, writer, phase = evidencePhase() }: {

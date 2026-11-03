@@ -38,8 +38,10 @@ export function destination(result: Result | QaResult): Destination | null {
 }
 export type Slot = FileRef & { id: string; role: 'screenshot' | 'original' | 'playback'; lane: string; caption: string;
   transform: Awaited<ReturnType<typeof derivePlayback>>['transform'] | null };
+export type ManifestCheck = { lane: string; id: string; state: 'PASS' | 'FAIL' | 'BLOCKED'; detail: string };
 export type Manifest = { version: 1; origin: 'live' | 'historical'; note: string; provenance: ObservedEvidence['provenance']; workflow: 'qa' | 'ci' | 'triage' | 'testerarmy';
-  runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[]; slots: Slot[] };
+  runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[];
+  checks: ManifestCheck[]; reason: string | null; slots: Slot[] };
 
 export function plain(text: string) {
   return sanitize(text, []).slice(0, 2200).replace(/[&<>"'`*_[\]()#!|@\\{}~:.\r\n]/g,
@@ -59,6 +61,7 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
   await mkdir(directory, { mode: 0o700 });
   const slots: Slot[] = [];
   const summary: string[] = [];
+  const checks: ManifestCheck[] = [];
   const groups = 'kind' in result ? result.lanes.map((lane) => ({ id: lane.id, state: lane.state, attemptId: lane.attemptId,
     session: lane.session?.id, identity: lane.identity, screenshots: lane.screenshots, recording: lane.recording,
     checks: lane.verdict ? [lane.verdict] : [], cleanup: lane.cleanup.state }))
@@ -72,7 +75,7 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
     const prefix = group.id === 'device' ? '' : group.id + '/';
     if (group.identity) await evidenceBytes(root, prefix + fileSchema.parse(group.identity).path, group.identity);
     summary.push(`Lane ${group.id}. Observed ${group.state}. Attempt ${group.attemptId ?? 'unavailable'}. Session ${group.session ?? 'unavailable'}. Cleanup ${group.cleanup}.`);
-    for (const check of group.checks) summary.push(`Agent observation ${group.id}/${check.id}. ${check.state}. ${check.detail}`);
+    for (const check of group.checks) checks.push({ lane: group.id, id: check.id, state: check.state, detail: check.detail });
     const names = new Set(group.screenshots.map((file) => file.path));
     if (names.size !== group.screenshots.length || group.checks.some((check) => !names.has(check.screenshot)) && group.state !== 'INCONCLUSIVE') throw new Error('Check screenshots are incomplete or duplicated.');
     for (const reference of group.screenshots) {
@@ -104,26 +107,51 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
   }
   if ('kind' in result) summary.push(`Concurrent turns ${result.concurrent}. Server ${result.server.stop?.state ?? 'unavailable'}. Healthy ${result.server.stop?.healthy ?? false}. Forced ${result.server.stop?.forced ?? false}.`);
   summary.push(`Subscription ${result.auth}.`);
-  if (result.state === 'INCONCLUSIVE') summary.push(`INCONCLUSIVE partial observation. ${result.reason}`);
   if (slots.length > 49 || slots.reduce((sum, slot) => sum + slot.bytes, 0) > 120_000_000) throw new Error('Publication attachment bounds exceeded.');
   return { version: 1, origin: observed.origin, note: observed.note, provenance: observed.provenance, workflow: 'kind' in result ? 'qa' : target.kind === 'triage' ? 'triage' : 'ci',
-    runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target, destination: to, summary, slots };
+    runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target, destination: to, summary,
+    checks, reason: result.state === 'INCONCLUSIVE' ? result.reason : null, slots };
 }
 
 export function markerIdentity(manifest: Manifest) {
   return `lob-agent:evidence:v1:${manifest.destination.kind}:${manifest.destination.number}:${manifest.workflow}:${manifest.runId}:${manifest.attemptId}`;
 }
+const verdictMark: Record<Manifest['state'], string> = { PASS: '🟢', NOT_REPLICATED: '🟢', FAIL: '🔴', REPLICATED: '🔴', INCONCLUSIVE: '⚪' };
+const checkMark: Record<ManifestCheck['state'], string> = { PASS: '🟢', FAIL: '🔴', BLOCKED: '⚪' };
+const workflowTitle: Record<Manifest['workflow'], string> = { qa: 'QA Swarm iOS', triage: 'Bug triage iOS', testerarmy: 'TesterArmy e2e iOS', ci: 'Agentic CI iOS' };
+
+function checkCounts(checks: readonly ManifestCheck[]) {
+  if (!checks.length) return 'No check finished';
+  const count = (state: ManifestCheck['state']) => checks.filter((check) => check.state === state).length;
+  const parts = [[count('FAIL'), 'failed'], [count('BLOCKED'), 'blocked'], [count('PASS'), 'passed']] as const;
+  return parts.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`).join(', ');
+}
+
+// One comment per run, laid out like the e2e GitHub reporter: the verdict and
+// its reason first, then each check, then folded receipts. Media slots stay
+// last, because each slot's section must hold its own asset link first.
 export function renderEvidence(manifest: Manifest, marker: string, selected: readonly Slot[], urls: ReadonlyMap<string, string>, state: 'pending' | 'partial' | 'complete' | 'stale') {
   const target = manifest.target;
   const native = target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
     : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`;
-  const lines = [marker, `## ${manifest.workflow === 'qa' ? 'QA Swarm iOS' : manifest.workflow === 'triage' ? 'Bug triage iOS' : manifest.workflow === 'testerarmy' ? 'TesterArmy e2e iOS' : 'Agentic CI iOS'}: ${manifest.state}`,
-    '', `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`, '',
+  const lines = [marker, `### ${verdictMark[manifest.state]} ${workflowTitle[manifest.workflow]}: ${manifest.state}`, '',
+    ...(manifest.reason ? [`**${plain(manifest.reason)}**`, ''] : []),
+    `${checkCounts(manifest.checks)} · \`${target.source.sha.slice(0, 7)}\` on ${plain(target.source.ref)} · [Workflow and artifacts](${manifest.runUrl})`, '',
+    `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`,
     state === 'stale' ? 'Stale or unverified destination. Archived observation only. No current-head verdict is asserted.' : manifest.origin === 'historical' ? 'Historical backfill of an archived observation. No current-head verdict is asserted.' : 'Live controller observation.',
-    plain(manifest.note), ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []), '', `Source [${target.source.sha}](https://github.com/${target.repository}/commit/${target.source.sha}) on ${plain(target.source.ref)}.`,
+    ...(manifest.note ? [plain(manifest.note)] : []), ''];
+  if (manifest.checks.length) {
+    const lanes = new Set(manifest.checks.map((check) => check.lane)).size > 1;
+    lines.push('| | Check | Observation |', '| --- | --- | --- |',
+      ...manifest.checks.map((check) => `| ${checkMark[check.state]} | ${plain(lanes ? `${check.lane}/${check.id}` : check.id)} | ${plain(check.detail)} |`), '');
+  }
+  lines.push('<details>', '<summary>Run receipts</summary>', '',
+    ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []),
+    `Source [${target.source.sha}](https://github.com/${target.repository}/commit/${target.source.sha}) on ${plain(target.source.ref)}.`,
     `[Workflow ${manifest.runId}](${manifest.runUrl}). Attempt ${manifest.attemptId}.`, plain(native),
     `Fixture SHA-256 ${target.fixture.sha256}. Original criteria SHA-256 ${target.criteria.sha256}.`,
-    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), '', ...manifest.summary.map(plain), ''];
+    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), ...manifest.summary.map(plain), '', '</details>', '');
+  if (selected.length) lines.push('#### Evidence', '');
   for (const slot of selected) {
     const url = urls.get(slot.id) ?? (state === 'pending' ? slot.path : null);
     lines.push(`<!-- lob-agent:slot:${slot.id}:${slot.sha256} -->`, plain(slot.caption),

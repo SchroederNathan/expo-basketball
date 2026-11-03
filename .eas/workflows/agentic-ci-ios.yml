@@ -166,16 +166,18 @@ jobs:
           name: agentic-ci-ios-evidence
           path: agent-output/public/**/*
 
+  # The evidence comment carries the verdict. This fallback posts only when
+  # that comment could not be published, so a PR normally gets one comment.
   comment:
     name: Report iOS evidence on the PR
     type: github-comment
     after: [check]
-    if: ${{ github.event.pull_request.number }}
+    if: ${{ github.event.pull_request.number && after.check.outputs.publication_state != 'complete' }}
     params:
       payload: |
         ## Agentic CI iOS
 
-        Verdict **${{ after.check.outputs.state || 'INCONCLUSIVE' }}**.
+        The evidence comment was not published. Verdict **${{ after.check.outputs.state || 'INCONCLUSIVE' }}**.
 
         [Open the workflow and evidence artifacts](${{ workflow.url }}).
 

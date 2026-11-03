@@ -40,7 +40,7 @@ assert.ok(jobs.comment.params.payload.includes('after.check.outputs.publication_
 assert.equal(workflow.on.workflow_dispatch.inputs.pr_number.required, false);
 assert.equal(jobs.comment.type, 'github-comment');
 assert.deepEqual(jobs.comment.after, ['check']);
-assert.equal(jobs.comment.if, '${{ github.event.pull_request.number }}');
+assert.equal(jobs.comment.if, "${{ github.event.pull_request.number && after.check.outputs.publication_state != 'complete' }}");
 assert.ok(jobs.comment.params.payload.includes("after.check.outputs.state || 'INCONCLUSIVE'"));
 assert.ok(jobs.comment.params.payload.includes('${{ workflow.url }}'));
 for (const job of Object.values(jobs)) {

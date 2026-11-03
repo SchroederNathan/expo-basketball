@@ -99,6 +99,19 @@ test('staging preserves original bytes, all playback frames, separate check capt
   const body = renderEvidence(manifest, '<!-- test -->', manifest.slots, new Map(), 'pending');
   assert.ok(body.includes('timing normalized')); assert.ok(body.includes('search-back')); assert.ok(body.includes('current-player'));
   assert.ok(!body.includes('private-log'));
+  // One comment per run: verdict headline, check table, folded receipts, then media.
+  assert.ok(body.startsWith('<!-- test -->\n### 🔴 Agentic CI iOS: FAIL\n'));
+  assert.ok(body.includes('1 failed, 2 passed · `'));
+  assert.deepEqual(manifest.checks.map((check) => `${check.id}:${check.state}`), ['scores:PASS', 'current-player:FAIL', 'search-back:PASS']);
+  assert.ok(body.includes('| 🟢 | scores | ')); assert.ok(body.includes('| 🔴 | current-player | '));
+  const receipts = body.indexOf('<summary>Run receipts</summary>');
+  const media = body.indexOf('<!-- lob-agent:slot:');
+  assert.ok(body.indexOf('| --- |') < receipts && receipts < body.indexOf('</details>') && body.indexOf('</details>') < media);
+  assert.ok(!/https?:\/\//.test(body.slice(media)), 'No link may follow the first media slot.');
+  const stopped = renderEvidence({ ...manifest, state: 'INCONCLUSIVE', checks: [], reason: 'Codex did not finish successfully.' }, '<!-- test -->', [], new Map(), 'partial');
+  assert.ok(stopped.startsWith('<!-- test -->\n### ⚪ Agentic CI iOS: INCONCLUSIVE\n'));
+  assert.ok(stopped.includes('**Codex did not finish successfully&#46;**')); assert.ok(stopped.includes('No check finished · `'));
+  assert.ok(!stopped.includes('#### Evidence') && !stopped.includes('| --- |'));
   await writeFile(join(directory, 'scores.png'), 'changed');
   await assert.rejects(stageEvidence({ observed: finalizedEvidence(result), root: directory, directory: join(directory, 'restaged'), env: { PATH: process.env.PATH } }));
 });
@@ -204,7 +217,8 @@ const receipt=await response.json(); process.exitCode=receipt.code;`);
   ];
   for (const slot of slots) await writeFile(join(root, slot.path), slot.role === 'screenshot' ? png : mp4);
   const manifest: Manifest = { version: 1, origin: 'live', note: '', provenance: null, workflow: 'ci', runId, runUrl, attemptId: randomUUID(), state: 'PASS', target,
-    destination: { kind: 'pr', repository, number: 4 }, summary: ['Agent observation. PASS.'], slots };
+    destination: { kind: 'pr', repository, number: 4 }, summary: ['Lane device. Observed PASS.'],
+    checks: [{ lane: 'device', id: 'scores', state: 'PASS', detail: 'Orbits 100, Comets 108, Final.' }], reason: null, slots };
   const remote = { download: async (url: string) => { const value = assets.get(url.split('/').at(-1)!); if (!value) throw new Error('No anonymous asset.'); return value; } };
   const deliver = () => deliverManifest({ manifest, root, directory: root, writer, remote });
   return { root, manifest, comments, assets, writes, writer, pr, remote, deliver, stats: () => ({ creates, uploads }), close: () => new Promise<void>((done) => { server.closeAllConnections(); server.close(() => done()); }) };
