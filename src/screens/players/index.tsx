@@ -7,7 +7,7 @@ import type { LeaderRow as LeaderRowData } from '@/api/schemas';
 import { DisplayText } from '@/components/display-text';
 import { Screen } from '@/components/screen';
 import { Headshot } from '@/components/headshot';
-import { leagueHeaderOptions } from '@/components/league-picker';
+import { LeagueToolbar, leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
@@ -67,6 +67,7 @@ export function PlayersScreen() {
           ...leagueHeaderOptions({ value: league, onChange: setPreferredLeague }),
         }}
       />
+      <LeagueToolbar value={league} onChange={setPreferredLeague} />
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"

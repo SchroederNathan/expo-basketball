@@ -4,7 +4,7 @@ import { useTeams } from '@/api/queries';
 import type { TeamSummary, TeamsIndex } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
 import { Screen } from '@/components/screen';
-import { leagueHeaderOptions } from '@/components/league-picker';
+import { LeagueToolbar, leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
@@ -55,6 +55,7 @@ export function TeamsScreen() {
           ...leagueHeaderOptions({ value: league, onChange: setPreferredLeague }),
         }}
       />
+      <LeagueToolbar value={league} onChange={setPreferredLeague} />
       <SectionList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
