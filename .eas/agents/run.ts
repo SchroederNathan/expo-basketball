@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { executeChange } from './change';
+import { codexFailure } from './codex-failure';
 import { finalizedEvidence, publicationStatus } from './evidence';
 import { publishEvidenceComment } from './evidence-publisher';
 import { evidencePhase } from './evidence-phase';
@@ -154,7 +155,7 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
       input: `${prompt}\n\nController context\nSession ${attemptId}. The app is already open and recording.\nUse bunx agent-device@0.21.33 <command> --platform ios --session ${attemptId}.\nSave screenshots under ${evidenceDirectory}.\nRequired installed identity is ${identityLabel(target)}.\n`,
     });
     termination = agent.termination;
-    if (!succeeded(agent)) throw new Error('Codex did not finish successfully.');
+    if (!succeeded(agent)) throw new Error(codexFailure(agent));
     verdict = schema.parse(await readJson(lastMessage));
     for (const check of verdict.checks) {
       if (screenshots.some((file) => file.path === check.screenshot)) throw new Error('Checks need distinct screenshots.');

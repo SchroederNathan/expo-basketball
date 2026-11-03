@@ -99,6 +99,22 @@ test('staging preserves original bytes, all playback frames, separate check capt
   const body = renderEvidence(manifest, '<!-- test -->', manifest.slots, new Map(), 'pending');
   assert.ok(body.includes('timing normalized')); assert.ok(body.includes('search-back')); assert.ok(body.includes('current-player'));
   assert.ok(!body.includes('private-log'));
+  // One short comment per run: verdict, checks, screenshot grid, recording, folded details.
+  assert.ok(body.startsWith('<!-- test -->\n### 🔴 Agentic CI iOS: FAIL · 1 failed, 2 passed\n'));
+  assert.deepEqual(manifest.checks.map((check) => `${check.id}:${check.state}`), ['scores:PASS', 'current-player:FAIL', 'search-back:PASS']);
+  assert.ok(body.includes('| 🟢 | scores | ')); assert.ok(body.includes('| 🔴 | current-player | '));
+  const grid = body.split('\n').filter((line) => line.startsWith('| ') && !line.includes('<!--') && !line.startsWith('| |') && !line.startsWith('| 🟢 |') && !line.startsWith('| 🔴 |')).join(' ');
+  for (const label of ['🟢 scores', '🔴 current-player', '🟢 search-back', 'controller-start', 'controller-end']) assert.ok(grid.includes(label), label);
+  const table = body.indexOf('| --- | --- | --- |');
+  const media = body.indexOf('<!-- lob-agent:slot:');
+  const details = body.indexOf('<summary>Run details</summary>');
+  assert.ok(table < media && media < body.indexOf('**Recording**') && body.indexOf('**Recording**') < details);
+  assert.ok(!/https?:\/\//.test(body.slice(media)), 'No link may follow the first media slot.');
+  assert.ok(!/SHA-256/.test(body.slice(0, details)), 'Hashes stay in the folded details.');
+  const stopped = renderEvidence({ ...manifest, state: 'INCONCLUSIVE', checks: [], reason: 'Codex did not finish successfully.' }, '<!-- test -->', [], new Map(), 'partial');
+  assert.ok(stopped.startsWith('<!-- test -->\n### ⚪ Agentic CI iOS: INCONCLUSIVE · no check finished\n'));
+  assert.ok(stopped.includes('**Codex did not finish successfully&#46;**'));
+  assert.ok(!stopped.includes('**Recording**') && !stopped.includes('| --- |'));
   await writeFile(join(directory, 'scores.png'), 'changed');
   await assert.rejects(stageEvidence({ observed: finalizedEvidence(result), root: directory, directory: join(directory, 'restaged'), env: { PATH: process.env.PATH } }));
 });
@@ -155,7 +171,7 @@ test('strict QA aggregate rejects duplicate lanes/sessions, unforced shutdown ga
 async function readBody(request: IncomingMessage) { const parts: Buffer[] = []; for await (const part of request) parts.push(part); return JSON.parse(Buffer.concat(parts).toString()); }
 async function apiFixture(mode: 'normal' | 'partial' | 'lost' | 'absent' | 'bad-hash' | 'hold' = 'normal', onCreate?: () => void) {
   const root = await mkdtemp(join(media, 'api-'));
-  const comments: { id: number; body: string; html_url: string; user: { id: number }; body_html: string }[] = [];
+  const comments: { id: number; body: string; html_url: string; user: { id: number }; body_html: string; on?: number }[] = [];
   const originalAcceptance = acceptanceMarker(acceptanceSchema.parse({ version: 1, repository, target: { ref: 'main', sha: 'b'.repeat(40) }, issue: { number: 3, id: 7, nodeId: 'node', sha256: '1'.repeat(64) }, criteriaSha256: '2'.repeat(64) }));
   const pr = { number: 4, body: originalAcceptance + '\nOriginal criteria stay frozen.', head: { sha: sourceSha, ref: target.source.ref, repo: { full_name: repository } }, base: { repo: { full_name: repository } } };
   const assets = new Map<string, Buffer>(); const writes: string[] = []; let creates = 0; let uploads = 0;
@@ -164,7 +180,8 @@ async function apiFixture(mode: 'normal' | 'partial' | 'lost' | 'absent' | 'bad-
     if (path === '/user') return res.end(JSON.stringify({ id: 17 }));
     if (path === '/repos/owner/repo') return res.end(JSON.stringify({ full_name: repository, private: false, permissions: { push: true } }));
     if (path === '/repos/owner/repo/pulls/4' && req.method === 'GET') return res.end(JSON.stringify(pr));
-    if (path === '/repos/owner/repo/issues/4/comments' && req.method === 'GET') return res.end(JSON.stringify(comments));
+    const listed = /^\/repos\/owner\/repo\/issues\/(\d+)\/comments$/.exec(path);
+    if (listed && req.method === 'GET') return res.end(JSON.stringify(comments.filter((comment) => (comment.on ?? 4) === Number(listed[1]))));
     if (path === '/mock/attach') {
       const input = await readBody(req); creates++; const mappings: Record<string, string> = {};
       for (const [index, file] of input.files.entries()) {
@@ -173,7 +190,7 @@ async function apiFixture(mode: 'normal' | 'partial' | 'lost' | 'absent' | 'bad-
       }
       let body: string = input.body;
       for (const [file, url] of Object.entries(mappings)) { body = body.replace(`![](${file})`, url).replaceAll(`](${file})`, `](${url})`); }
-      if (mode !== 'absent') comments.push({ id: 100 + creates, body, html_url: `https://github.com/owner/repo/pull/4#issuecomment-${100 + creates}`, user: { id: 17 }, body_html: Object.values(mappings).map((url) => `<img src="${url}"><video src="${url}"></video>`).join('') });
+      if (mode !== 'absent') comments.push({ id: 100 + creates, body, on: input.number, html_url: `https://github.com/owner/repo/${input.kind === 'issue' ? 'issues' : 'pull'}/${input.number}#issuecomment-${100 + creates}`, user: { id: 17 }, body_html: Object.values(mappings).map((url) => `<img src="${url}"><video src="${url}"></video>`).join('') });
       writes.push('native-create'); onCreate?.(); if (mode === 'hold') return; return res.end(JSON.stringify({ code: mode === 'normal' ? 0 : 1 }));
     }
     if (path.startsWith('/repos/owner/repo/issues/comments/')) {
@@ -191,7 +208,7 @@ async function apiFixture(mode: 'normal' | 'partial' | 'lost' | 'absent' | 'bad-
   await writeFile(native, `import fs from 'node:fs';
 const args=process.argv.slice(2); const at=args.indexOf('--body-file'); const files=[];
 for(let i=0;i<args.length;i++) if(args[i]==='--attach') {const path=args[++i]; files.push({path,bytes:fs.readFileSync(path).toString('base64')});}
-const response=await fetch(process.env.MOCK_API+'/mock/attach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:fs.readFileSync(args[at+1],'utf8'),files})});
+const response=await fetch(process.env.MOCK_API+'/mock/attach',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:args[0],number:Number(args[2]),body:fs.readFileSync(args[at+1],'utf8'),files})});
 const receipt=await response.json(); process.exitCode=receipt.code;`);
   const launcher = join(root, 'gh'); await writeFile(launcher, '#!/bin/sh\nexec "$MOCK_NODE" "$MOCK_SCRIPT" "$@"\n', { mode: 0o700 });
   const env = { AGENT_GITHUB_WRITE_TOKEN: 'synthetic-controller-only', AGENT_TRUSTED_REPOSITORY: repository, AGENT_TRUSTED_AUTOMATION: 'enabled' };
@@ -204,11 +221,27 @@ const receipt=await response.json(); process.exitCode=receipt.code;`);
   ];
   for (const slot of slots) await writeFile(join(root, slot.path), slot.role === 'screenshot' ? png : mp4);
   const manifest: Manifest = { version: 1, origin: 'live', note: '', provenance: null, workflow: 'ci', runId, runUrl, attemptId: randomUUID(), state: 'PASS', target,
-    destination: { kind: 'pr', repository, number: 4 }, summary: ['Agent observation. PASS.'], slots };
+    destination: { kind: 'pr', repository, number: 4 }, summary: ['Lane device. Observed PASS.'],
+    checks: [{ lane: 'device', id: 'scores', state: 'PASS', detail: 'Orbits 100, Comets 108, Final.' }], reason: null, slots };
   const remote = { download: async (url: string) => { const value = assets.get(url.split('/').at(-1)!); if (!value) throw new Error('No anonymous asset.'); return value; } };
   const deliver = () => deliverManifest({ manifest, root, directory: root, writer, remote });
   return { root, manifest, comments, assets, writes, writer, pr, remote, deliver, stats: () => ({ creates, uploads }), close: () => new Promise<void>((done) => { server.closeAllConnections(); server.close(() => done()); }) };
 }
+
+test('a staging issue holds the uploads and the receipt carries the bot report', { timeout: 20_000 }, async () => {
+  const api = await apiFixture('normal');
+  try {
+    const receipt = await deliverManifest({ manifest: { ...api.manifest, uploads: { kind: 'issue', repository, number: 9 } }, root: api.root, directory: api.root, writer: api.writer, remote: api.remote });
+    assert.equal(receipt.state, 'complete');
+    assert.equal(api.comments.length, 1); assert.equal(api.comments[0]!.on, 9);
+    assert.equal(receipt.url, `https://github.com/owner/repo/issues/9#issuecomment-${api.comments[0]!.id}`);
+    const report = receipt.report!;
+    assert.ok(report.startsWith('### 🟢 Agentic CI iOS: PASS · 1 passed\n'), 'The bot report starts with the verdict, not a marker.');
+    assert.ok(!report.includes('<!-- lob-agent'), 'The bot report holds no reconciliation markers.');
+    for (const asset of receipt.assets) assert.ok(report.includes(asset.url), asset.id);
+    assert.ok(report.includes('| 🟢 | scores | '));
+  } finally { await api.close(); }
+});
 
 for (const mode of ['normal', 'partial', 'lost'] as const) test(`real native shell ${mode} writes reconcile and rerun reuses exact verified assets`, { timeout: 20_000 }, async () => {
   const api = await apiFixture(mode);

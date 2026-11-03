@@ -21,7 +21,7 @@ export function finalizedEvidence(result: Result | QaResult): ObservedEvidence {
 }
 export const deliverySchema = z.strictObject({ version: z.literal(1), state: z.enum(['complete', 'partial', 'unavailable', 'artifact-only']),
   observedState: z.enum(['PASS', 'FAIL', 'REPLICATED', 'NOT_REPLICATED', 'INCONCLUSIVE']), manifestSha256: z.string().nullable(), commentId: z.number().int().positive().nullable(),
-  url: z.string().nullable(), bodySha256: z.string().nullable(), authorId: z.number().int().positive().nullable(), rendered: z.boolean(),
+  url: z.string().nullable(), bodySha256: z.string().nullable(), authorId: z.number().int().positive().nullable(), rendered: z.boolean(), report: z.string().nullable().default(null),
   assets: z.array(z.strictObject({ id: z.string(), url: z.string(), sha256: z.string(), bytes: z.number().int().positive() })), missing: z.array(z.string()), reason: z.string().nullable() }).superRefine((receipt, ctx) => {
   if (receipt.state === 'complete' && (!receipt.manifestSha256 || !receipt.commentId || !receipt.url || !receipt.bodySha256 || !receipt.authorId ||
     !receipt.rendered || receipt.missing.length || !receipt.assets.length || new Set(receipt.assets.map((asset) => asset.id)).size !== receipt.assets.length)) {
@@ -38,8 +38,12 @@ export function destination(result: Result | QaResult): Destination | null {
 }
 export type Slot = FileRef & { id: string; role: 'screenshot' | 'original' | 'playback'; lane: string; caption: string;
   transform: Awaited<ReturnType<typeof derivePlayback>>['transform'] | null };
+export type ManifestCheck = { lane: string; id: string; state: 'PASS' | 'FAIL' | 'BLOCKED'; detail: string };
 export type Manifest = { version: 1; origin: 'live' | 'historical'; note: string; provenance: ObservedEvidence['provenance']; workflow: 'qa' | 'ci' | 'triage' | 'testerarmy';
-  runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[]; slots: Slot[] };
+  runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[];
+  checks: ManifestCheck[]; reason: string | null; slots: Slot[];
+  // Where media is uploaded when the Expo bot, not the token, posts the report.
+  uploads?: Destination };
 
 export function plain(text: string) {
   return sanitize(text, []).slice(0, 2200).replace(/[&<>"'`*_[\]()#!|@\\{}~:.\r\n]/g,
@@ -59,6 +63,7 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
   await mkdir(directory, { mode: 0o700 });
   const slots: Slot[] = [];
   const summary: string[] = [];
+  const checks: ManifestCheck[] = [];
   const groups = 'kind' in result ? result.lanes.map((lane) => ({ id: lane.id, state: lane.state, attemptId: lane.attemptId,
     session: lane.session?.id, identity: lane.identity, screenshots: lane.screenshots, recording: lane.recording,
     checks: lane.verdict ? [lane.verdict] : [], cleanup: lane.cleanup.state }))
@@ -72,7 +77,7 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
     const prefix = group.id === 'device' ? '' : group.id + '/';
     if (group.identity) await evidenceBytes(root, prefix + fileSchema.parse(group.identity).path, group.identity);
     summary.push(`Lane ${group.id}. Observed ${group.state}. Attempt ${group.attemptId ?? 'unavailable'}. Session ${group.session ?? 'unavailable'}. Cleanup ${group.cleanup}.`);
-    for (const check of group.checks) summary.push(`Agent observation ${group.id}/${check.id}. ${check.state}. ${check.detail}`);
+    for (const check of group.checks) checks.push({ lane: group.id, id: check.id, state: check.state, detail: check.detail });
     const names = new Set(group.screenshots.map((file) => file.path));
     if (names.size !== group.screenshots.length || group.checks.some((check) => !names.has(check.screenshot)) && group.state !== 'INCONCLUSIVE') throw new Error('Check screenshots are incomplete or duplicated.');
     for (const reference of group.screenshots) {
@@ -104,41 +109,97 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
   }
   if ('kind' in result) summary.push(`Concurrent turns ${result.concurrent}. Server ${result.server.stop?.state ?? 'unavailable'}. Healthy ${result.server.stop?.healthy ?? false}. Forced ${result.server.stop?.forced ?? false}.`);
   summary.push(`Subscription ${result.auth}.`);
-  if (result.state === 'INCONCLUSIVE') summary.push(`INCONCLUSIVE partial observation. ${result.reason}`);
   if (slots.length > 49 || slots.reduce((sum, slot) => sum + slot.bytes, 0) > 120_000_000) throw new Error('Publication attachment bounds exceeded.');
   return { version: 1, origin: observed.origin, note: observed.note, provenance: observed.provenance, workflow: 'kind' in result ? 'qa' : target.kind === 'triage' ? 'triage' : 'ci',
-    runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target, destination: to, summary, slots };
+    runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target, destination: to, summary,
+    checks, reason: result.state === 'INCONCLUSIVE' ? result.reason : null, slots };
 }
 
 export function markerIdentity(manifest: Manifest) {
   return `lob-agent:evidence:v1:${manifest.destination.kind}:${manifest.destination.number}:${manifest.workflow}:${manifest.runId}:${manifest.attemptId}`;
 }
+const verdictMark: Record<Manifest['state'], string> = { PASS: '🟢', NOT_REPLICATED: '🟢', FAIL: '🔴', REPLICATED: '🔴', INCONCLUSIVE: '⚪' };
+const checkMark: Record<ManifestCheck['state'], string> = { PASS: '🟢', FAIL: '🔴', BLOCKED: '⚪' };
+const workflowTitle: Record<Manifest['workflow'], string> = { qa: 'QA Swarm iOS', triage: 'Bug triage iOS', testerarmy: 'TesterArmy e2e iOS', ci: 'Agentic CI iOS' };
+
+function checkCounts(checks: readonly ManifestCheck[]) {
+  if (!checks.length) return 'no check finished';
+  const count = (state: ManifestCheck['state']) => checks.filter((check) => check.state === state).length;
+  const parts = [[count('FAIL'), 'failed'], [count('BLOCKED'), 'blocked'], [count('PASS'), 'passed']] as const;
+  return parts.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`).join(', ');
+}
+
+function slotLabel(slot: Slot, checks: readonly ManifestCheck[]) {
+  const name = slot.path.replace(/\.png$/, '').replace(new RegExp(`^(${slot.lane}|testerarmy)-`), '');
+  const check = checks.find((candidate) => candidate.id === name && (candidate.lane === slot.lane || slot.lane === 'ios'));
+  return `${check ? checkMark[check.state] + ' ' : ''}${plain(name)}`;
+}
+
+function slotMedia(slot: Slot, url: string | null, label: string) {
+  if (!url) return `Missing media ${slot.id}.`;
+  if (slot.role === 'original') return `[Download the original recording](${url})`;
+  if (slot.role === 'playback') return url.startsWith('https://') ? url : `![](${url})`;
+  return `![${label}](${url})`;
+}
+
+// One short comment per run, laid out like the e2e GitHub reporter: verdict,
+// reason, checks, then the screenshots and recording. Run details are folded
+// at the end and hold no links, because each media slot's section, which runs
+// to the next slot or the end, must hold only its own asset link.
 export function renderEvidence(manifest: Manifest, marker: string, selected: readonly Slot[], urls: ReadonlyMap<string, string>, state: 'pending' | 'partial' | 'complete' | 'stale') {
   const target = manifest.target;
-  const native = target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
-    : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`;
-  const lines = [marker, `## ${manifest.workflow === 'qa' ? 'QA Swarm iOS' : manifest.workflow === 'triage' ? 'Bug triage iOS' : manifest.workflow === 'testerarmy' ? 'TesterArmy e2e iOS' : 'Agentic CI iOS'}: ${manifest.state}`,
-    '', `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`, '',
-    state === 'stale' ? 'Stale or unverified destination. Archived observation only. No current-head verdict is asserted.' : manifest.origin === 'historical' ? 'Historical backfill of an archived observation. No current-head verdict is asserted.' : 'Live controller observation.',
-    plain(manifest.note), ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []), '', `Source [${target.source.sha}](https://github.com/${target.repository}/commit/${target.source.sha}) on ${plain(target.source.ref)}.`,
-    `[Workflow ${manifest.runId}](${manifest.runUrl}). Attempt ${manifest.attemptId}.`, plain(native),
-    `Fixture SHA-256 ${target.fixture.sha256}. Original criteria SHA-256 ${target.criteria.sha256}.`,
-    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), '', ...manifest.summary.map(plain), ''];
-  for (const slot of selected) {
-    const url = urls.get(slot.id) ?? (state === 'pending' ? slot.path : null);
-    lines.push(`<!-- lob-agent:slot:${slot.id}:${slot.sha256} -->`, plain(slot.caption),
-      ...(slot.role !== 'screenshot' && manifest.note ? [plain(manifest.note)] : []), `SHA-256 ${slot.sha256}, ${slot.bytes} bytes.`, '');
-    if (url) lines.push(slot.role === 'original' ? `[Download unchanged original recording](${url})`
-      : slot.role === 'playback' && urls.has(slot.id) ? url : `![${slot.role === 'playback' ? '' : plain(slot.caption)}](${url})`);
-    else lines.push(`Missing media ${slot.id}.`);
-    lines.push('');
+  const sha = target.source.sha;
+  const lines = [marker, `### ${verdictMark[manifest.state]} ${workflowTitle[manifest.workflow]}: ${manifest.state} · ${checkCounts(manifest.checks)}`,
+    `[\`${sha.slice(0, 7)}\`](https://github.com/${target.repository}/commit/${sha}) on ${plain(target.source.ref)} · [Workflow](${manifest.runUrl})`, ''];
+  if (manifest.reason) lines.push(`**${plain(manifest.reason)}**`, '');
+  if (state === 'stale') lines.push('> Publication stale. This destination changed or could not be checked again. No current-head verdict is asserted.', '');
+  else if (manifest.origin === 'historical') lines.push('> Historical backfill of an archived observation. No current-head verdict is asserted.', '');
+  else if (state === 'partial') lines.push('> Some media could not be verified, so it may be missing below.', '');
+  if (manifest.checks.length) {
+    const lanes = new Set(manifest.checks.map((check) => check.lane)).size > 1;
+    lines.push('| | Check | Result |', '| --- | --- | --- |',
+      ...manifest.checks.map((check) => `| ${checkMark[check.state]} | ${plain(lanes ? `${check.lane}/${check.id}` : check.id)} | ${plain(check.detail)} |`), '');
   }
+  const media = (slot: Slot) => slotMedia(slot, urls.get(slot.id) ?? (state === 'pending' ? slot.path : null), plain(slot.caption));
+  const tag = (slot: Slot) => `<!-- lob-agent:slot:${slot.id}:${slot.sha256} -->`;
+  const shots = selected.filter((slot) => slot.role === 'screenshot');
+  for (let row = 0; row < shots.length; row += 3) {
+    const group = shots.slice(row, row + 3);
+    lines.push(`| ${group.map((slot) => slotLabel(slot, manifest.checks)).join(' | ')} |`, `|${' --- |'.repeat(group.length)}`,
+      `| ${group.map((slot) => `${tag(slot)} ${media(slot)}`).join(' | ')} |`, '');
+  }
+  const playback = selected.filter((slot) => slot.role === 'playback');
+  const originals = selected.filter((slot) => slot.role === 'original');
+  if (playback.length || originals.length) lines.push('**Recording** · playback re-timed to 15 fps, every frame kept', '');
+  for (const slot of [...playback, ...originals]) lines.push(tag(slot), media(slot), '');
+  lines.push('<details>', '<summary>Run details</summary>', '',
+    `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`,
+    manifest.origin === 'historical' ? 'Historical backfill.' : 'Live controller observation.', ...(manifest.note ? [plain(manifest.note)] : []),
+    ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []),
+    `Source ${sha} on ${plain(target.source.ref)}. Workflow ${manifest.runId}. Attempt ${manifest.attemptId}.`,
+    target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
+      : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`,
+    `Fixture SHA-256 ${target.fixture.sha256}. Original criteria SHA-256 ${target.criteria.sha256}.`,
+    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), ...manifest.summary.map(plain),
+    ...selected.map((slot) => `${plain(slot.id)}: SHA-256 ${slot.sha256}, ${slot.bytes} bytes. ${plain(slot.caption)}`), '', '</details>');
   const body = lines.join('\n');
   if (body.length > 30_000) throw new Error('Evidence comment exceeds its bounded size.');
   return body;
 }
 
+// The text the Expo bot posts: the same report without the hidden markers the
+// token-owned upload comment needs for reconciliation.
+export function renderReport(manifest: Manifest, urls: ReadonlyMap<string, string>, state: 'partial' | 'complete' | 'stale') {
+  return renderEvidence(manifest, '', manifest.slots, urls, state).replace(/^\n/, '').replace(/<!-- lob-agent:slot:[^>]* --> ?/g, '');
+}
+
+function fallbackReport(result: Result | QaResult) {
+  const reason = result.state === 'INCONCLUSIVE' ? `\n\n**${plain(result.reason ?? 'The run did not finish.')}**` : '';
+  return `### ${verdictMark[result.state]} Agentic CI iOS: ${result.state}${reason}\n\nThe evidence could not be published.${result.runUrl ? ` [Workflow](${result.runUrl})` : ''}`;
+}
+
 export function publicationStatus(result: Result | QaResult, receipt: Delivery) {
   return { state: !['complete', 'artifact-only'].includes(receipt.state) ? 'INCONCLUSIVE' : result.state,
-    observed_state: result.state, attemptId: result.attemptId, publication_state: receipt.state, publication_url: receipt.url ?? '' };
+    observed_state: result.state, attemptId: result.attemptId, publication_state: receipt.state, publication_url: receipt.url ?? '',
+    comment_body: receipt.report ?? fallbackReport(result) };
 }

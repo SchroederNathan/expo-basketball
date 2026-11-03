@@ -24,7 +24,7 @@ The historical [original reproduction](https://github.com/SchroederNathan/expo-b
 
 CI, triage, and QA use one controller publisher after their cleanup and subscription finalizers. The observed `result.json` stays unchanged. A separate delivery receipt records verified asset URLs, hashes, the exact comment ID, the writer ID, and GitHub rendering signals.
 
-A PR destination or triage issue makes publication required. `status.json` reports `INCONCLUSIVE` when delivery is partial or unavailable and preserves the device verdict in `observed_state`. Manual checks and QA without a destination retain artifacts only. CI's existing bot comment links the new evidence comment. The publisher never edits the bot's comment, the PR body, or its original acceptance receipt.
+A PR destination or triage issue makes publication required. `status.json` reports `INCONCLUSIVE` when delivery is partial or unavailable and preserves the device verdict in `observed_state`. Manual checks and QA without a destination retain artifacts only. Agentic CI posts one PR comment from the Expo bot, and a rerun updates it. The controller uploads the media as a token comment on the `AGENT_EVIDENCE_UPLOAD_ISSUE` staging issue, verifies every asset there, and hands the finished report to the bot through the `comment_body` output. The report opens with the verdict and reason, then a check table, a screenshot grid, the recording, and folded run details. Without a staging issue, the token posts the report on the PR as before. QA Swarm, Bug triage, and TesterArmy still post with the token, because the bot job only comments on pull requests. The publisher never edits the PR body or its original acceptance receipt.
 
 ## Admission and playback
 

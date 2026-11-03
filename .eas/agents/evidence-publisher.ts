@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
 import { assetUrl, attachmentLimit, evidenceBytes, publicBytes } from './evidence-files';
-import { deliverySchema, destination, markerIdentity, renderEvidence, stageEvidence, type Delivery, type Manifest, type ObservedEvidence, type Slot } from './evidence';
+import { deliverySchema, destination, markerIdentity, renderEvidence, renderReport, stageEvidence, type Delivery, type Manifest, type ObservedEvidence, type Slot } from './evidence';
 import { evidencePhase, phaseBudget, type EvidencePhase } from './evidence-phase';
 import { type EvidenceWriter } from './evidence-tools';
 import { commentSchema, PublicationConflict } from './github';
@@ -19,12 +19,16 @@ class DeliveryConflict extends PublicationConflict {
   constructor(readonly delivery: Delivery) { super('Evidence ownership or content conflict.'); }
 }
 
+// The comment that holds the uploads: the report destination, or a staging
+// issue when the Expo bot posts the report itself.
+function host(manifest: Manifest) { return manifest.uploads ?? manifest.destination; }
+
 function owned(comments: Comment[], identity: string, marker: string, writer: EvidenceWriter, manifest: Manifest) {
   const matches = comments.filter((comment) => comment.body.includes(identity) && (identity.includes(':recovery:') || !comment.body.split('\n')[0]!.includes(':recovery:')));
   if (matches.length > 1) throw new PublicationConflict('Duplicate evidence markers.');
   const found = matches[0];
   if (found && (found.user.id !== writer.actor || !found.body.startsWith(marker + '\n') || found.body.split(marker).length !== 2 ||
-    found.html_url !== `https://github.com/${manifest.destination.repository}/${manifest.destination.kind === 'pr' ? 'pull' : 'issues'}/${manifest.destination.number}#issuecomment-${found.id}`)) {
+    found.html_url !== `https://github.com/${host(manifest).repository}/${host(manifest).kind === 'pr' ? 'pull' : 'issues'}/${host(manifest).number}#issuecomment-${found.id}`)) {
     throw new PublicationConflict('Evidence marker, manifest, URL, or author conflict.');
   }
   return found;
@@ -78,6 +82,7 @@ export async function deliverManifest({ manifest, directory, root, writer, remot
   const issued: { key: string; tag: string; slots: Slot[] }[] = [];
   const receipt = (state: Delivery['state'], reason: string | null): Delivery => ({ version: 1, state, observedState: manifest.state,
     manifestSha256, commentId: canonical?.id ?? null, url: canonical?.html_url ?? null, bodySha256: canonical ? digest(canonical.body) : null, authorId: canonical ? writer.actor : null, rendered,
+    report: manifest.uploads ? renderReport(manifest, urls, state === 'complete' ? 'complete' : reason?.startsWith('Destination changed') ? 'stale' : 'partial') : null,
     assets: manifest.slots.flatMap((slot) => { const url = urls.get(slot.id); return url ? [{ id: slot.id, url, sha256: slot.sha256, bytes: slot.bytes }] : []; }),
     missing: manifest.slots.filter((slot) => !urls.has(slot.id)).map((slot) => slot.id), reason });
   let baseline: string | null | undefined;
@@ -93,7 +98,7 @@ export async function deliverManifest({ manifest, directory, root, writer, remot
     } catch { throw new DestinationChanged('Destination no longer matches the observation.'); }
     phaseBudget(budget, 1);
   };
-  const find = async (key: string, tag: string, budget: EvidencePhase) => owned(await github.comments(manifest.destination.number, phaseBudget(budget, 20_000).signal), key, tag, writer, manifest);
+  const find = async (key: string, tag: string, budget: EvidencePhase) => owned(await github.comments(host(manifest).number, phaseBudget(budget, 20_000).signal), key, tag, writer, manifest);
   const upload = async (key: string, tag: string, slots: Slot[]) => {
     phaseBudget(phase, 1);
     const intentPath = join(root, `publication-intent-${digest(key)}.json`);
@@ -114,7 +119,7 @@ export async function deliverManifest({ manifest, directory, root, writer, remot
       const budget = phaseBudget(phase, 180_000);
       issued.push({ key, tag, slots }); invoked = true;
       const result = await command({ executable: writer.gh, cwd: directory, env: writer.env, ...budget,
-        args: [manifest.destination.kind, 'comment', String(manifest.destination.number), '--repo', manifest.destination.repository,
+        args: [host(manifest).kind, 'comment', String(host(manifest).number), '--repo', host(manifest).repository,
           '--body-file', bodyFile, ...slots.flatMap((slot) => ['--attach', slot.path])] });
       await persist(root, 'publication-invocation', { marker: tag, termination: result.termination.kind,
         cli: 'gh@2.103.1', binarySha256: writer.binarySha256, exitCode: result.termination.kind === 'exited' ? result.termination.code : null });
@@ -233,10 +238,10 @@ async function destinationSnapshot(observed: Pick<ObservedEvidence, 'origin' | '
 export async function publishEvidenceComment({ observed, root, writer, cwd, env, receiptRoot = root, remote, phase = evidencePhase() }: {
   observed: ObservedEvidence; root: string; writer: EvidenceWriter | null; cwd: string; env: NodeJS.ProcessEnv; receiptRoot?: string; remote?: Network; phase?: EvidencePhase;
 }): Promise<Delivery> {
-  if (!destination(observed.result)) return { version: 1, state: 'artifact-only', observedState: observed.result.state, manifestSha256: null, commentId: null, url: null, bodySha256: null, authorId: null, rendered: false, assets: [], missing: [], reason: null };
+  if (!destination(observed.result)) return { version: 1, state: 'artifact-only', observedState: observed.result.state, manifestSha256: null, commentId: null, url: null, bodySha256: null, authorId: null, rendered: false, report: null, assets: [], missing: [], reason: null };
   const directory = await mkdtemp(join(tmpdir(), 'lob-evidence-'));
   const staged = join(directory, 'media');
-  let delivery: Delivery = { version: 1, state: 'unavailable', observedState: observed.result.state, manifestSha256: null, commentId: null, url: null, bodySha256: null, authorId: null, rendered: false, assets: [], missing: [], reason: 'Publication readiness or admission failed.' };
+  let delivery: Delivery = { version: 1, state: 'unavailable', observedState: observed.result.state, manifestSha256: null, commentId: null, url: null, bodySha256: null, authorId: null, rendered: false, report: null, assets: [], missing: [], reason: 'Publication readiness or admission failed.' };
   try {
     if (!writer) throw new Error('No prepared writer.');
     const before = await destinationSnapshot(observed, destination(observed.result)!, writer, cwd, env, phase);
@@ -245,7 +250,10 @@ export async function publishEvidenceComment({ observed, root, writer, cwd, env,
       if (digest(await readFile(join(cwd, target.criteria.path))) !== target.criteria.sha256 ||
         digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'))) !== target.fixture.sha256) throw new Error('Source criteria or fixture changed.');
     }
-    const manifest = await stageEvidence({ observed, root, directory: staged, env, phase });
+    const staging = /^[1-9][0-9]*$/.test(env.AGENT_EVIDENCE_UPLOAD_ISSUE ?? '') ? Number(env.AGENT_EVIDENCE_UPLOAD_ISSUE) : null;
+    const stagedManifest = await stageEvidence({ observed, root, directory: staged, env, phase });
+    const manifest = stagedManifest.workflow === 'ci' && stagedManifest.destination.kind === 'pr' && staging
+      ? { ...stagedManifest, uploads: { kind: 'issue' as const, repository: stagedManifest.destination.repository, number: staging } } : stagedManifest;
     await persist(receiptRoot, 'publication-manifest', manifest);
     delivery = await deliverManifest({ manifest, directory: staged, root: receiptRoot, writer, remote, phase, validateDestination: async (budget) => {
       const after = await destinationSnapshot(observed, manifest.destination, writer, cwd, env, budget);

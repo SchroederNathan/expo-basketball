@@ -55,16 +55,16 @@ export async function stageTesterArmyEvidence({ result: input, root, directory, 
     workflow: 'testerarmy', runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target,
     destination: { kind: 'pr', repository: target.repository, number: target.pullRequest }, slots,
     summary: [`Framework run ${result.framework.runId}. Test ${result.framework.testId}. Attempt ${result.framework.attemptId}. Actual exit ${result.termination.kind === 'observed' ? result.termination.exitCode : 'unavailable'}.`,
-      `EAS session ${result.lease.sessionId}. Cleanup ${result.cleanup.state}. Subscription ${result.auth}.`,
-      ...result.checks.map((check) => `Deterministic check ${check.id}. ${check.state}. ${check.detail}`),
-      ...(result.state === 'INCONCLUSIVE' ? [`INCONCLUSIVE partial observation. ${result.reason}`] : [])] };
+      `EAS session ${result.lease.sessionId}. Cleanup ${result.cleanup.state}. Subscription ${result.auth}.`],
+    checks: result.checks.map((check) => ({ lane: 'ios', id: check.id, state: check.state, detail: check.detail })),
+    reason: result.state === 'INCONCLUSIVE' ? result.reason : null };
 }
 
 export async function publishTesterArmyEvidence({ result, root, directory, cwd, env, writer, phase = evidencePhase() }: {
   result: TesterArmyResultV1; root: string; directory: string; cwd: string; env: NodeJS.ProcessEnv; writer: EvidenceWriter | null; phase?: EvidencePhase;
 }): Promise<Delivery> {
   const base: Delivery = { version: 1, state: 'unavailable', observedState: result.state, manifestSha256: null, commentId: null,
-    url: null, bodySha256: null, authorId: null, rendered: false, assets: [], missing: [], reason: null };
+    url: null, bodySha256: null, authorId: null, rendered: false, report: null, assets: [], missing: [], reason: null };
   if (!result.target?.pullRequest) return { ...base, state: 'artifact-only' };
   try {
     if (!writer) throw new Error('Prepared native evidence writer unavailable.');
