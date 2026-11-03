@@ -8,7 +8,8 @@ export const operations = Object.freeze({
   'issue-to-pr': Object.freeze({ label: 'agent', workflow: '.eas/workflows/issue-to-pr.yml' }),
   'bug-triage': Object.freeze({ label: 'agent-triage', workflow: '.eas/workflows/bug-triage.yml' }),
 });
-const marker = '<!-- lob-demo:player-label -->';
+// EAS preflight decides which demo issue a marker names and rejects unknown ones.
+const marker = /<!-- lob-demo:[a-z0-9-]+ -->/;
 const shaPattern = /^[a-f0-9]{40}$/;
 const actorPattern = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
 const trustedAuthors = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
@@ -37,7 +38,7 @@ function validIssue(issue, number, label) {
     issue.html_url === `https://github.com/${repository}/issues/${number}` &&
     issue.repository_url === `https://api.github.com/repos/${repository}` &&
     typeof issue.title === 'string' && issue.title.length > 0 && issue.title.length <= 500 &&
-    typeof issue.body === 'string' && issue.body.length <= 20_000 && issue.body.includes(marker) &&
+    typeof issue.body === 'string' && issue.body.length <= 20_000 && marker.test(issue.body) &&
     (!label || (Array.isArray(issue.labels) && issue.labels.some(item => item?.name === label)));
 }
 
