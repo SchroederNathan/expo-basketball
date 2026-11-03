@@ -165,8 +165,10 @@ jobs:
             set-output attempt_id "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).attemptId')"
             set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
             set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_state || "unavailable"')"
-            set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_url || ""')"
-            set-output comment_body "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).comment_body || ""')"
+            VALUE="$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_url || ""')"
+            if [ -n "$VALUE" ]; then set-output publication_url "$VALUE"; fi
+            VALUE="$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).comment_body || ""')"
+            if [ -n "$VALUE" ]; then set-output comment_body "$VALUE"; fi
           else
             set-output state INCONCLUSIVE
           fi

@@ -97,10 +97,12 @@ export async function stageEvidence({ observed, root, directory, env, phase = ev
       const ref = fileSchema.parse(group.recording);
       if (ref.path !== 'session.mp4') throw new Error('Unexpected original recording reference.');
       const path = `${group.id}-original.mp4`;
-      const bytes = await evidenceBytes(root, prefix + ref.path, ref, attachmentLimit);
+      // A long run can record more than GitHub accepts as one attachment. The
+      // playback stays under the limit, and the original stays in the artifacts.
+      const bytes = await evidenceBytes(root, prefix + ref.path, ref);
       await writeFile(join(directory, path), bytes, { flag: 'wx', mode: 0o600 });
       await probeMedia(join(directory, path), directory, env, phase);
-      slots.push({ ...ref, path, id: `${group.id}-original`, role: 'original', lane: group.id,
+      if (bytes.length <= attachmentLimit) slots.push({ ...ref, path, id: `${group.id}-original`, role: 'original', lane: group.id,
         caption: `${group.id} unchanged original recording`, transform: null });
       const playback = await derivePlayback({ directory, original: path, output: `${group.id}-playback.mp4`, env, phase });
       slots.push({ ...playback, id: `${group.id}-playback`, role: 'playback', lane: group.id,
@@ -172,6 +174,7 @@ export function renderEvidence(manifest: Manifest, marker: string, selected: rea
   const originals = selected.filter((slot) => slot.role === 'original');
   if (playback.length || originals.length) lines.push('**Recording** · playback re-timed to 15 fps, every frame kept', '');
   for (const slot of [...playback, ...originals]) lines.push(tag(slot), media(slot), '');
+  if (playback.length && !originals.length) lines.push('The original recording is larger than a GitHub attachment. Download it from the workflow artifacts.', '');
   lines.push('<details>', '<summary>Run details</summary>', '',
     `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`,
     manifest.origin === 'historical' ? 'Historical backfill.' : 'Live controller observation.', ...(manifest.note ? [plain(manifest.note)] : []),

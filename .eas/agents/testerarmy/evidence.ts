@@ -46,9 +46,11 @@ export async function stageTesterArmyEvidence({ result: input, root, directory, 
       caption: `e2e ${ref.path.replace('.png', '')}. ${check?.state ?? result.state}`, transform: null });
   }
   const original = 'testerarmy-original.mp4';
-  await writeFile(join(directory, original), await evidenceBytes(root, evidence.recording.path, evidence.recording, attachmentLimit), { flag: 'wx', mode: 0o600 });
+  // An original over the attachment limit stays in the workflow artifacts.
+  const recording = await evidenceBytes(root, evidence.recording.path, evidence.recording);
+  await writeFile(join(directory, original), recording, { flag: 'wx', mode: 0o600 });
   await probeMedia(join(directory, original), directory, env, phase);
-  slots.push({ ...evidence.recording, path: original, id: 'testerarmy-original', role: 'original', lane: 'ios', caption: 'e2e unchanged original recording', transform: null });
+  if (recording.length <= attachmentLimit) slots.push({ ...evidence.recording, path: original, id: 'testerarmy-original', role: 'original', lane: 'ios', caption: 'e2e unchanged original recording', transform: null });
   const playback = await derivePlayback({ directory, original, output: 'testerarmy-playback.mp4', env, phase });
   slots.push({ ...playback, id: 'testerarmy-playback', role: 'playback', lane: 'ios',
     caption: `e2e edited playback, timing normalized. All ${playback.transform.frames} decoded frames preserved in order. H.264/yuv420p at 15 fps. Not timing or latency evidence.` });

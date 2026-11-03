@@ -35,7 +35,7 @@ export async function probeMedia(file: string, directory: string, env: NodeJS.Pr
 }
 
 export async function derivePlayback({ directory, original, output, env, phase = evidencePhase() }: { directory: string; original: string; output: string; env: NodeJS.ProcessEnv; phase?: EvidencePhase }) {
-  const source = await evidenceBytes(directory, original, undefined, attachmentLimit);
+  const source = await evidenceBytes(directory, original);
   const before = await probeMedia(join(directory, original), directory, env, phase);
   const version = await command({ executable: { file: 'ffmpeg', args: [] }, args: ['-version'], cwd: directory, env: safeEnvironment(env), ...phaseBudget(phase, 10_000) });
   if (!succeeded(version)) throw new Error('FFmpeg version is unavailable.');
