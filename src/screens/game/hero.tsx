@@ -79,23 +79,6 @@ function Center({ game }: { game: Game }) {
   );
 }
 
-export function GameStatusTitle({ game }: { game: Game }) {
-  const live = game.state === 'in';
-  return (
-    <View style={styles.title} accessible accessibilityRole="header">
-      {live ? <View style={styles.liveDot} /> : null}
-      <Text numberOfLines={1} style={[typography.callout, { fontWeight: '700', color: live ? colors.live : colors.text }]}>
-        {game.status}
-      </Text>
-      {game.detail && game.state !== 'pre' ? (
-        <Text numberOfLines={1} style={[typography.callout, { flexShrink: 1, color: colors.textTertiary }]}>
-          {game.detail}
-        </Text>
-      ) : null}
-    </View>
-  );
-}
-
 type GameHeroProps = {
   game: Game;
   children?: ReactNode;
@@ -151,17 +134,5 @@ const styles = StyleSheet.create({
   },
   score: {
     flexShrink: 1,
-  },
-  title: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: space.xs,
-    maxWidth: 240,
-  },
-  liveDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: colors.accent,
   },
 });
