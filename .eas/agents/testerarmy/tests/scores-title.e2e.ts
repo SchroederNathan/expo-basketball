@@ -26,11 +26,9 @@ test('Scores title acceptance', async ({ app, agent, device, screen }) => {
 
   await agent.act('Tap the Today control to return to today\'s scores.', actOptions);
   await expect(screen.getByLabel('Today, Monday, October 26', { exact: true })).toBeVisible();
-  try {
-    for (const text of ['Orbits', 'Comets', '100', '108', 'Final']) {
-      await expect.soft(screen.getByText(text, { exact: true }).first()).toBeVisible();
-    }
-  } finally { await app.screenshot('today-scores'); }
+  // The game card is one accessibility element, such as "Orbits 100, Comets 108, Final".
+  try { await expect.soft(screen.getByLabel(/^Orbits 100, Comets 108, Final(?:,|$)/)).toBeVisible(); }
+  finally { await app.screenshot('today-scores'); }
 
   await expect(screen.getByLabel(identity, { exact: true })).toBeVisible();
   await app.screenshot('controller-end');
