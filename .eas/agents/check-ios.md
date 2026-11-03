@@ -19,3 +19,5 @@ The original bug criteria live in `demo/issues/player-label.md`, independently o
 Return only the JSON object required by the output schema. Include exactly one item for each check ID with its state, observed detail, and screenshot basename.
 Use FAIL only for an observed acceptance failure. Use BLOCKED for unavailable UI or missing evidence and INCONCLUSIVE overall.
 PASS requires every check to pass. A command exiting zero or an expectation copied from this prompt is not an observation.
+
+This line exists only to test the Agentic CI stop report.
