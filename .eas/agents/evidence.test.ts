@@ -99,19 +99,22 @@ test('staging preserves original bytes, all playback frames, separate check capt
   const body = renderEvidence(manifest, '<!-- test -->', manifest.slots, new Map(), 'pending');
   assert.ok(body.includes('timing normalized')); assert.ok(body.includes('search-back')); assert.ok(body.includes('current-player'));
   assert.ok(!body.includes('private-log'));
-  // One comment per run: verdict headline, check table, folded receipts, then media.
-  assert.ok(body.startsWith('<!-- test -->\n### 🔴 Agentic CI iOS: FAIL\n'));
-  assert.ok(body.includes('1 failed, 2 passed · `'));
+  // One short comment per run: verdict, checks, screenshot grid, recording, folded details.
+  assert.ok(body.startsWith('<!-- test -->\n### 🔴 Agentic CI iOS: FAIL · 1 failed, 2 passed\n'));
   assert.deepEqual(manifest.checks.map((check) => `${check.id}:${check.state}`), ['scores:PASS', 'current-player:FAIL', 'search-back:PASS']);
   assert.ok(body.includes('| 🟢 | scores | ')); assert.ok(body.includes('| 🔴 | current-player | '));
-  const receipts = body.indexOf('<summary>Run receipts</summary>');
+  const grid = body.split('\n').filter((line) => line.startsWith('| ') && !line.includes('<!--') && !line.startsWith('| |') && !line.startsWith('| 🟢 |') && !line.startsWith('| 🔴 |')).join(' ');
+  for (const label of ['🟢 scores', '🔴 current-player', '🟢 search-back', 'controller-start', 'controller-end']) assert.ok(grid.includes(label), label);
+  const table = body.indexOf('| --- | --- | --- |');
   const media = body.indexOf('<!-- lob-agent:slot:');
-  assert.ok(body.indexOf('| --- |') < receipts && receipts < body.indexOf('</details>') && body.indexOf('</details>') < media);
+  const details = body.indexOf('<summary>Run details</summary>');
+  assert.ok(table < media && media < body.indexOf('**Recording**') && body.indexOf('**Recording**') < details);
   assert.ok(!/https?:\/\//.test(body.slice(media)), 'No link may follow the first media slot.');
+  assert.ok(!/SHA-256/.test(body.slice(0, details)), 'Hashes stay in the folded details.');
   const stopped = renderEvidence({ ...manifest, state: 'INCONCLUSIVE', checks: [], reason: 'Codex did not finish successfully.' }, '<!-- test -->', [], new Map(), 'partial');
-  assert.ok(stopped.startsWith('<!-- test -->\n### ⚪ Agentic CI iOS: INCONCLUSIVE\n'));
-  assert.ok(stopped.includes('**Codex did not finish successfully&#46;**')); assert.ok(stopped.includes('No check finished · `'));
-  assert.ok(!stopped.includes('#### Evidence') && !stopped.includes('| --- |'));
+  assert.ok(stopped.startsWith('<!-- test -->\n### ⚪ Agentic CI iOS: INCONCLUSIVE · no check finished\n'));
+  assert.ok(stopped.includes('**Codex did not finish successfully&#46;**'));
+  assert.ok(!stopped.includes('**Recording**') && !stopped.includes('| --- |'));
   await writeFile(join(directory, 'scores.png'), 'changed');
   await assert.rejects(stageEvidence({ observed: finalizedEvidence(result), root: directory, directory: join(directory, 'restaged'), env: { PATH: process.env.PATH } }));
 });

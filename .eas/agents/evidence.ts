@@ -121,46 +121,65 @@ const checkMark: Record<ManifestCheck['state'], string> = { PASS: '🟢', FAIL: 
 const workflowTitle: Record<Manifest['workflow'], string> = { qa: 'QA Swarm iOS', triage: 'Bug triage iOS', testerarmy: 'TesterArmy e2e iOS', ci: 'Agentic CI iOS' };
 
 function checkCounts(checks: readonly ManifestCheck[]) {
-  if (!checks.length) return 'No check finished';
+  if (!checks.length) return 'no check finished';
   const count = (state: ManifestCheck['state']) => checks.filter((check) => check.state === state).length;
   const parts = [[count('FAIL'), 'failed'], [count('BLOCKED'), 'blocked'], [count('PASS'), 'passed']] as const;
   return parts.filter(([n]) => n > 0).map(([n, label]) => `${n} ${label}`).join(', ');
 }
 
-// One comment per run, laid out like the e2e GitHub reporter: the verdict and
-// its reason first, then each check, then folded receipts. Media slots stay
-// last, because each slot's section must hold its own asset link first.
+function slotLabel(slot: Slot, checks: readonly ManifestCheck[]) {
+  const name = slot.path.replace(/\.png$/, '').replace(new RegExp(`^(${slot.lane}|testerarmy)-`), '');
+  const check = checks.find((candidate) => candidate.id === name && (candidate.lane === slot.lane || slot.lane === 'ios'));
+  return `${check ? checkMark[check.state] + ' ' : ''}${plain(name)}`;
+}
+
+function slotMedia(slot: Slot, url: string | null, label: string) {
+  if (!url) return `Missing media ${slot.id}.`;
+  if (slot.role === 'original') return `[Download the original recording](${url})`;
+  if (slot.role === 'playback') return url.startsWith('https://') ? url : `![](${url})`;
+  return `![${label}](${url})`;
+}
+
+// One short comment per run, laid out like the e2e GitHub reporter: verdict,
+// reason, checks, then the screenshots and recording. Run details are folded
+// at the end and hold no links, because each media slot's section, which runs
+// to the next slot or the end, must hold only its own asset link.
 export function renderEvidence(manifest: Manifest, marker: string, selected: readonly Slot[], urls: ReadonlyMap<string, string>, state: 'pending' | 'partial' | 'complete' | 'stale') {
   const target = manifest.target;
-  const native = target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
-    : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`;
-  const lines = [marker, `### ${verdictMark[manifest.state]} ${workflowTitle[manifest.workflow]}: ${manifest.state}`, '',
-    ...(manifest.reason ? [`**${plain(manifest.reason)}**`, ''] : []),
-    `${checkCounts(manifest.checks)} · \`${target.source.sha.slice(0, 7)}\` on ${plain(target.source.ref)} · [Workflow and artifacts](${manifest.runUrl})`, '',
-    `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`,
-    state === 'stale' ? 'Stale or unverified destination. Archived observation only. No current-head verdict is asserted.' : manifest.origin === 'historical' ? 'Historical backfill of an archived observation. No current-head verdict is asserted.' : 'Live controller observation.',
-    ...(manifest.note ? [plain(manifest.note)] : []), ''];
+  const sha = target.source.sha;
+  const lines = [marker, `### ${verdictMark[manifest.state]} ${workflowTitle[manifest.workflow]}: ${manifest.state} · ${checkCounts(manifest.checks)}`,
+    `[\`${sha.slice(0, 7)}\`](https://github.com/${target.repository}/commit/${sha}) on ${plain(target.source.ref)} · [Workflow](${manifest.runUrl})`, ''];
+  if (manifest.reason) lines.push(`**${plain(manifest.reason)}**`, '');
+  if (state === 'stale') lines.push('> Publication stale. This destination changed or could not be checked again. No current-head verdict is asserted.', '');
+  else if (manifest.origin === 'historical') lines.push('> Historical backfill of an archived observation. No current-head verdict is asserted.', '');
+  else if (state === 'partial') lines.push('> Some media could not be verified, so it may be missing below.', '');
   if (manifest.checks.length) {
     const lanes = new Set(manifest.checks.map((check) => check.lane)).size > 1;
-    lines.push('| | Check | Observation |', '| --- | --- | --- |',
+    lines.push('| | Check | Result |', '| --- | --- | --- |',
       ...manifest.checks.map((check) => `| ${checkMark[check.state]} | ${plain(lanes ? `${check.lane}/${check.id}` : check.id)} | ${plain(check.detail)} |`), '');
   }
-  lines.push('<details>', '<summary>Run receipts</summary>', '',
-    ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []),
-    `Source [${target.source.sha}](https://github.com/${target.repository}/commit/${target.source.sha}) on ${plain(target.source.ref)}.`,
-    `[Workflow ${manifest.runId}](${manifest.runUrl}). Attempt ${manifest.attemptId}.`, plain(native),
-    `Fixture SHA-256 ${target.fixture.sha256}. Original criteria SHA-256 ${target.criteria.sha256}.`,
-    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), ...manifest.summary.map(plain), '', '</details>', '');
-  if (selected.length) lines.push('#### Evidence', '');
-  for (const slot of selected) {
-    const url = urls.get(slot.id) ?? (state === 'pending' ? slot.path : null);
-    lines.push(`<!-- lob-agent:slot:${slot.id}:${slot.sha256} -->`, plain(slot.caption),
-      ...(slot.role !== 'screenshot' && manifest.note ? [plain(manifest.note)] : []), `SHA-256 ${slot.sha256}, ${slot.bytes} bytes.`, '');
-    if (url) lines.push(slot.role === 'original' ? `[Download unchanged original recording](${url})`
-      : slot.role === 'playback' && urls.has(slot.id) ? url : `![${slot.role === 'playback' ? '' : plain(slot.caption)}](${url})`);
-    else lines.push(`Missing media ${slot.id}.`);
-    lines.push('');
+  const media = (slot: Slot) => slotMedia(slot, urls.get(slot.id) ?? (state === 'pending' ? slot.path : null), plain(slot.caption));
+  const tag = (slot: Slot) => `<!-- lob-agent:slot:${slot.id}:${slot.sha256} -->`;
+  const shots = selected.filter((slot) => slot.role === 'screenshot');
+  for (let row = 0; row < shots.length; row += 3) {
+    const group = shots.slice(row, row + 3);
+    lines.push(`| ${group.map((slot) => slotLabel(slot, manifest.checks)).join(' | ')} |`, `|${' --- |'.repeat(group.length)}`,
+      `| ${group.map((slot) => `${tag(slot)} ${media(slot)}`).join(' | ')} |`, '');
   }
+  const playback = selected.filter((slot) => slot.role === 'playback');
+  const originals = selected.filter((slot) => slot.role === 'original');
+  if (playback.length || originals.length) lines.push('**Recording** · playback re-timed to 15 fps, every frame kept', '');
+  for (const slot of [...playback, ...originals]) lines.push(tag(slot), media(slot), '');
+  lines.push('<details>', '<summary>Run details</summary>', '',
+    `Publication ${state === 'pending' ? 'pending verification' : state}. Observed device verdict ${manifest.state}.`,
+    manifest.origin === 'historical' ? 'Historical backfill.' : 'Live controller observation.', ...(manifest.note ? [plain(manifest.note)] : []),
+    ...(manifest.provenance ? [`Reviewed archive SHA-256 ${manifest.provenance.archiveSha256}. Original result SHA-256 ${manifest.provenance.resultSha256}.`] : []),
+    `Source ${sha} on ${plain(target.source.ref)}. Workflow ${manifest.runId}. Attempt ${manifest.attemptId}.`,
+    target.native.kind === 'repacked' ? `Installed repack ${target.native.installed}. Native source ${target.native.source} at ${target.native.sourceSha}.`
+      : `Installed build ${target.native.installed} at ${target.native.sourceSha}.`,
+    `Fixture SHA-256 ${target.fixture.sha256}. Original criteria SHA-256 ${target.criteria.sha256}.`,
+    ...(target.issue ? [`Original issue ${target.issue.number}, input SHA-256 ${target.issue.sha256}.`] : []), ...manifest.summary.map(plain),
+    ...selected.map((slot) => `${plain(slot.id)}: SHA-256 ${slot.sha256}, ${slot.bytes} bytes. ${plain(slot.caption)}`), '', '</details>');
   const body = lines.join('\n');
   if (body.length > 30_000) throw new Error('Evidence comment exceeds its bounded size.');
   return body;
