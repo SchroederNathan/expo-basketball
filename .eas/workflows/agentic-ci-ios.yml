@@ -137,6 +137,7 @@ jobs:
       observed_state: ${{ steps.check.outputs.observed_state }}
       publication_state: ${{ steps.check.outputs.publication_state }}
       publication_url: ${{ steps.check.outputs.publication_url }}
+      comment_body: ${{ steps.check.outputs.comment_body }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -156,6 +157,7 @@ jobs:
             set-output observed_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).observed_state || "INCONCLUSIVE"')"
             set-output publication_state "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_state || "unavailable"')"
             set-output publication_url "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).publication_url || ""')"
+            set-output comment_body "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/status.json", "utf8")).comment_body || ""')"
           else
             set-output state INCONCLUSIVE
           fi
@@ -166,27 +168,17 @@ jobs:
           name: agentic-ci-ios-evidence
           path: agent-output/public/**/*
 
-  # The evidence comment carries the verdict. This fallback posts only when
-  # that comment could not be published, so a PR normally gets one comment.
+  # The Expo bot posts the whole report, and updates the same comment on
+  # reruns. The controller uploads the media to the AGENT_EVIDENCE_UPLOAD_ISSUE
+  # staging issue first, so no PR comment comes from the token.
   comment:
     name: Report iOS evidence on the PR
     type: github-comment
     after: [check]
-    if: ${{ github.event.pull_request.number && after.check.outputs.publication_state != 'complete' }}
+    if: ${{ github.event.pull_request.number }}
     params:
       payload: |
-        ## Agentic CI iOS
-
-        The evidence comment was not published. Verdict **${{ after.check.outputs.state || 'INCONCLUSIVE' }}**.
-
-        [Open the workflow and evidence artifacts](${{ workflow.url }}).
-
-        Observed device verdict **${{ after.check.outputs.observed_state || 'INCONCLUSIVE' }}**.
-        Rich publication **${{ after.check.outputs.publication_state || 'unavailable' }}**.
-        [Embedded screenshots, playback, and originals](${{ after.check.outputs.publication_url || workflow.url }}).
-
-        Candidate `${{ github.event.pull_request.head.sha }}`.
-        Attempt `${{ after.check.outputs.attempt_id || 'unavailable' }}`.
+        ${{ after.check.outputs.comment_body || '### ⚪ Agentic CI iOS: INCONCLUSIVE · the check produced no report' }}
 
   result:
     name: Require a verified PASS

@@ -21,7 +21,7 @@ export function finalizedEvidence(result: Result | QaResult): ObservedEvidence {
 }
 export const deliverySchema = z.strictObject({ version: z.literal(1), state: z.enum(['complete', 'partial', 'unavailable', 'artifact-only']),
   observedState: z.enum(['PASS', 'FAIL', 'REPLICATED', 'NOT_REPLICATED', 'INCONCLUSIVE']), manifestSha256: z.string().nullable(), commentId: z.number().int().positive().nullable(),
-  url: z.string().nullable(), bodySha256: z.string().nullable(), authorId: z.number().int().positive().nullable(), rendered: z.boolean(),
+  url: z.string().nullable(), bodySha256: z.string().nullable(), authorId: z.number().int().positive().nullable(), rendered: z.boolean(), report: z.string().nullable().default(null),
   assets: z.array(z.strictObject({ id: z.string(), url: z.string(), sha256: z.string(), bytes: z.number().int().positive() })), missing: z.array(z.string()), reason: z.string().nullable() }).superRefine((receipt, ctx) => {
   if (receipt.state === 'complete' && (!receipt.manifestSha256 || !receipt.commentId || !receipt.url || !receipt.bodySha256 || !receipt.authorId ||
     !receipt.rendered || receipt.missing.length || !receipt.assets.length || new Set(receipt.assets.map((asset) => asset.id)).size !== receipt.assets.length)) {
@@ -41,7 +41,9 @@ export type Slot = FileRef & { id: string; role: 'screenshot' | 'original' | 'pl
 export type ManifestCheck = { lane: string; id: string; state: 'PASS' | 'FAIL' | 'BLOCKED'; detail: string };
 export type Manifest = { version: 1; origin: 'live' | 'historical'; note: string; provenance: ObservedEvidence['provenance']; workflow: 'qa' | 'ci' | 'triage' | 'testerarmy';
   runId: string; runUrl: string; attemptId: string; state: Result['state']; target: Target; destination: Destination; summary: string[];
-  checks: ManifestCheck[]; reason: string | null; slots: Slot[] };
+  checks: ManifestCheck[]; reason: string | null; slots: Slot[];
+  // Where media is uploaded when the Expo bot, not the token, posts the report.
+  uploads?: Destination };
 
 export function plain(text: string) {
   return sanitize(text, []).slice(0, 2200).replace(/[&<>"'`*_[\]()#!|@\\{}~:.\r\n]/g,
@@ -185,7 +187,19 @@ export function renderEvidence(manifest: Manifest, marker: string, selected: rea
   return body;
 }
 
+// The text the Expo bot posts: the same report without the hidden markers the
+// token-owned upload comment needs for reconciliation.
+export function renderReport(manifest: Manifest, urls: ReadonlyMap<string, string>, state: 'partial' | 'complete' | 'stale') {
+  return renderEvidence(manifest, '', manifest.slots, urls, state).replace(/^\n/, '').replace(/<!-- lob-agent:slot:[^>]* --> ?/g, '');
+}
+
+function fallbackReport(result: Result | QaResult) {
+  const reason = result.state === 'INCONCLUSIVE' ? `\n\n**${plain(result.reason ?? 'The run did not finish.')}**` : '';
+  return `### ${verdictMark[result.state]} Agentic CI iOS: ${result.state}${reason}\n\nThe evidence could not be published.${result.runUrl ? ` [Workflow](${result.runUrl})` : ''}`;
+}
+
 export function publicationStatus(result: Result | QaResult, receipt: Delivery) {
   return { state: !['complete', 'artifact-only'].includes(receipt.state) ? 'INCONCLUSIVE' : result.state,
-    observed_state: result.state, attemptId: result.attemptId, publication_state: receipt.state, publication_url: receipt.url ?? '' };
+    observed_state: result.state, attemptId: result.attemptId, publication_state: receipt.state, publication_url: receipt.url ?? '',
+    comment_body: receipt.report ?? fallbackReport(result) };
 }

@@ -64,7 +64,7 @@ export async function publishTesterArmyEvidence({ result, root, directory, cwd, 
   result: TesterArmyResultV1; root: string; directory: string; cwd: string; env: NodeJS.ProcessEnv; writer: EvidenceWriter | null; phase?: EvidencePhase;
 }): Promise<Delivery> {
   const base: Delivery = { version: 1, state: 'unavailable', observedState: result.state, manifestSha256: null, commentId: null,
-    url: null, bodySha256: null, authorId: null, rendered: false, assets: [], missing: [], reason: null };
+    url: null, bodySha256: null, authorId: null, rendered: false, report: null, assets: [], missing: [], reason: null };
   if (!result.target?.pullRequest) return { ...base, state: 'artifact-only' };
   try {
     if (!writer) throw new Error('Prepared native evidence writer unavailable.');
