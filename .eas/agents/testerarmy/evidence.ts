@@ -51,7 +51,7 @@ export async function stageTesterArmyEvidence({ result: input, root, directory, 
   const playback = await derivePlayback({ directory, original, output: 'testerarmy-playback.mp4', env, phase });
   slots.push({ ...playback, id: 'testerarmy-playback', role: 'playback', lane: 'ios',
     caption: `e2e edited playback, timing normalized. All ${playback.transform.frames} decoded frames preserved in order. H.264/yuv420p at 15 fps. Not timing or latency evidence.` });
-  return { version: 1, origin: 'live', note: 'Open source e2e navigation with deterministic acceptance assertions.', provenance: null,
+  return { version: 1, origin: 'live', note: '', provenance: null,
     workflow: 'testerarmy', runId: result.runId, runUrl: url, attemptId: result.attemptId, state: result.state, target,
     destination: { kind: 'pr', repository: target.repository, number: target.pullRequest }, slots,
     summary: [`Framework run ${result.framework.runId}. Test ${result.framework.testId}. Attempt ${result.framework.attemptId}. Actual exit ${result.termination.kind === 'observed' ? result.termination.exitCode : 'unavailable'}.`,

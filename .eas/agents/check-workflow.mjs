@@ -39,7 +39,9 @@ for (const key of ['observed_state', 'publication_state', 'publication_url', 'co
 assert.ok(jobs.comment.params.payload.includes('after.check.outputs.comment_body'));
 assert.equal(workflow.on.workflow_dispatch.inputs.pr_number.required, false);
 assert.equal(jobs.comment.type, 'github-comment');
-assert.deepEqual(jobs.comment.after, ['check']);
+assert.deepEqual(jobs.comment.after, ['preflight', 'check']);
+assert.ok(jobs.comment.params.payload.includes('after.preflight.outputs.stop_report'));
+assert.ok(jobs.preflight.outputs.stop_report);
 assert.equal(jobs.comment.if, '${{ github.event.pull_request.number }}');
 for (const job of Object.values(jobs)) {
   for (const dependency of [...(job.needs ?? []), ...(job.after ?? [])]) assert.ok(jobs[dependency]);

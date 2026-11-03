@@ -120,7 +120,7 @@ export function markerIdentity(manifest: Manifest) {
 }
 const verdictMark: Record<Manifest['state'], string> = { PASS: '🟢', NOT_REPLICATED: '🟢', FAIL: '🔴', REPLICATED: '🔴', INCONCLUSIVE: '⚪' };
 const checkMark: Record<ManifestCheck['state'], string> = { PASS: '🟢', FAIL: '🔴', BLOCKED: '⚪' };
-const workflowTitle: Record<Manifest['workflow'], string> = { qa: 'QA Swarm iOS', triage: 'Bug triage iOS', testerarmy: 'TesterArmy e2e iOS', ci: 'Agentic CI iOS' };
+const workflowTitle: Record<Manifest['workflow'], string> = { qa: 'QA Swarm iOS', triage: 'Bug triage iOS', testerarmy: 'E2E iOS', ci: 'Agentic CI iOS' };
 
 function checkCounts(checks: readonly ManifestCheck[]) {
   if (!checks.length) return 'no check finished';

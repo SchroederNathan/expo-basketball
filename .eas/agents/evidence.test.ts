@@ -269,7 +269,7 @@ for (const moving of [false, true]) test(`TesterArmy manifest retains native acc
     assert.equal(api.stats().creates, moving ? 0 : 1);
     assert.equal(api.pr.body, original);
     if (!moving) {
-      assert.ok(api.comments[0]!.body.includes('TesterArmy e2e iOS: PASS'));
+      assert.ok(api.comments[0]!.body.includes('E2E iOS: PASS')); assert.ok(!api.comments[0]!.body.includes('TesterArmy'));
       assert.ok(api.comments[0]!.body.includes(':testerarmy:'));
       const writes = api.writes.length;
       const repeated = await api.deliver();

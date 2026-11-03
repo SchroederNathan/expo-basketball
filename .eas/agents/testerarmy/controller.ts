@@ -176,7 +176,7 @@ export async function executeTesterArmy(options: Options) {
       diagnostic: diagnosticSchema.safeParse({ ...diagnoseReport(rawReport), account }).data ?? null }) });
   await mkdir(root, { recursive: true, mode: 0o700 });
   await publishFile({ directory: root, name: 'result.json', bytes: JSON.stringify(result, null, 2) });
-  await publishFile({ directory: root, name: 'report.md', bytes: `# TesterArmy e2e iOS\n\n${result.state}\n\n${result.checks.map((check) => `- ${check.id}. ${check.state}. ${check.detail}`).join('\n')}\n\n${result.state === 'INCONCLUSIVE' ? result.reason : ''}\n\nCleanup ${cleanup.state}. Subscription ${auth}.\n` });
+  await publishFile({ directory: root, name: 'report.md', bytes: `# E2E iOS\n\n${result.state}\n\n${result.checks.map((check) => `- ${check.id}. ${check.state}. ${check.detail}`).join('\n')}\n\n${result.state === 'INCONCLUSIVE' ? result.reason : ''}\n\nCleanup ${cleanup.state}. Subscription ${auth}.\n` });
   const staged = await mkdtemp(join(tmpdir(), 'lob-testerarmy-publication-'));
   let delivery;
   try { delivery = await publishTesterArmyEvidence({ result, root, directory: join(staged, 'media'), cwd: options.cwd, env: options.env, writer, phase: evidencePhase() }); }
