@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import {
-  FlatList,
+  type FlatList,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,10 +11,12 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import { Screen } from '@/components/screen';
 import { HeaderIconButton } from '@/components/header-icon-button';
 import { leagueHeaderOptions } from '@/components/league-picker';
-import { dayWindow, shortDateLabel, windowIndex, type Ymd } from '@/domain/dates';
+import { daysBetween, dayWindow, shortDateLabel, windowIndex, type Ymd } from '@/domain/dates';
 import type { League } from '@/domain/league';
 import { parseScoresParams } from '@/navigation/hrefs';
 import { useCalendar } from '@/state/calendar';
@@ -24,11 +26,13 @@ import { colors, space, typography } from '@/theme';
 import { CALENDAR_AVAILABLE, DateSheet } from './date-sheet';
 import { DateStrip } from './date-strip';
 import { DayPage } from './day-page';
+import { pagerPosition } from './strip-motion';
 
 // Pages cover the anchor day plus 30 days either side. A date outside that
 // window moves the anchor, which rebuilds the pager around the new date.
 const PAGER_RADIUS = 30;
 const WEB_SETTLE_MS = 120;
+const WEB = Platform.OS === 'web';
 
 export function ScoresScreen() {
   const params = parseScoresParams(useLocalSearchParams());
@@ -52,6 +56,13 @@ export function ScoresScreen() {
   const pageIndex = useRef(selectedIndex);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // The date strip follows the pager frame by frame. Its position counts days
+  // from a base date fixed for the screen's life, so a pager rebuilt around a
+  // new anchor keeps the same position for the same day.
+  const [stripBase] = useState(selected);
+  const anchorOffset = daysBetween(stripBase, anchor);
+  const stripPosition = useSharedValue(daysBetween(stripBase, selected));
+
   // A link or a push can name a league. It becomes the browse league, so every
   // tab agrees, and the parameter is cleared so later picker choices stick.
   useEffect(() => {
@@ -61,12 +72,20 @@ export function ScoresScreen() {
   }, [params.league, router]);
 
   // A longer jump skips the pages between, so their scoreboards never load.
+  // The strip jumps with it. An animated scroll moves the strip by itself.
   useEffect(() => {
     const distance = Math.abs(pageIndex.current - selectedIndex);
     if (distance === 0) return;
     pageIndex.current = selectedIndex;
-    listRef.current?.scrollToIndex({ index: selectedIndex, animated: distance === 1 && !reducedMotion });
+    const animated = distance === 1 && !reducedMotion;
+    if (!animated) stripPosition.set(daysBetween(stripBase, selected));
+    listRef.current?.scrollToIndex({ index: selectedIndex, animated });
   }, [selectedIndex, reducedMotion]);
+
+  // A new anchor rebuilds the pager, which may send no scroll event.
+  useEffect(() => {
+    stripPosition.set(daysBetween(stripBase, selected));
+  }, [anchorOffset]);
 
   useEffect(
     () => () => {
@@ -99,11 +118,17 @@ export function ScoresScreen() {
   };
 
   // Web scroll views send no momentum events, so a short pause marks the settle.
-  const onWebScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const offsetX = event.nativeEvent.contentOffset.x;
+  const onWebScroll = (offsetX: number) => {
     if (settleTimer.current !== null) clearTimeout(settleTimer.current);
     settleTimer.current = setTimeout(() => settleAt(offsetX), WEB_SETTLE_MS);
   };
+
+  // Runs on the UI thread on native. Web has one thread, so the settle call
+  // there costs no thread hop.
+  const onPagerScroll = useAnimatedScrollHandler((event) => {
+    stripPosition.set(pagerPosition(event.contentOffset.x, width, anchorOffset, PAGER_RADIUS));
+    if (WEB) scheduleOnRN(onWebScroll, event.contentOffset.x);
+  });
 
   return (
     <Screen>
@@ -143,8 +168,15 @@ export function ScoresScreen() {
           ),
         }}
       />
-      <DateStrip selected={selected} today={today} onSelect={selectDate} />
-      <FlatList
+      <DateStrip
+        base={stripBase}
+        position={stripPosition}
+        selected={selected}
+        today={today}
+        reducedMotion={reducedMotion}
+        onSelect={selectDate}
+      />
+      <Animated.FlatList
         key={`${league}:${anchor}:${width}`}
         ref={listRef}
         style={styles.pager}
@@ -161,8 +193,8 @@ export function ScoresScreen() {
         maxToRenderPerBatch={1}
         windowSize={3}
         onMomentumScrollEnd={onMomentumScrollEnd}
-        onScroll={Platform.OS === 'web' ? onWebScroll : undefined}
-        scrollEventThrottle={Platform.OS === 'web' ? 64 : undefined}
+        onScroll={onPagerScroll}
+        scrollEventThrottle={16}
         renderItem={({ item }) => (
           <DayPage league={league} date={item} zone={zone} visible={item === selected} width={width} />
         )}
