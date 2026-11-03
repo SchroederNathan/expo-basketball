@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { executeChange } from './change';
 import { codexFailure } from './codex-failure';
+import { stopReport } from './stop-report';
 import { finalizedEvidence, publicationStatus } from './evidence';
 import { publishEvidenceComment } from './evidence-publisher';
 import { evidencePhase } from './evidence-phase';
@@ -242,8 +243,11 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch((error: unknown) => {
+  main().catch(async (error: unknown) => {
     const reason = error instanceof z.ZodError ? 'Invalid controller inputs.' : error instanceof Error ? error.message : 'Unknown error.';
+    if (process.argv[2] === 'preflight') {
+      try { await mkdir('agent-output', { recursive: true }); await writeFile('agent-output/stop-report.md', stopReport(reason, process.env)); } catch {}
+    }
     process.stderr.write(`${sanitize(reason, Object.values(process.env).filter((value) => typeof value === 'string'))}\nNo verified result is available.\n`);
     process.exitCode = 2;
   });

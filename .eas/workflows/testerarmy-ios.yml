@@ -1,4 +1,4 @@
-name: TesterArmy e2e iOS
+name: E2E iOS
 
 'on':
   workflow_dispatch:

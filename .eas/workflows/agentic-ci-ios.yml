@@ -62,6 +62,9 @@ jobs:
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
       AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
+      AGENT_RUN_URL: ${{ workflow.url }}
+    outputs:
+      stop_report: ${{ steps.preflight.outputs.stop_report }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -71,7 +74,13 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
-      - run: bun .eas/agents/run.ts preflight
+      # A rejected source still gets a plain PR report from the bot.
+      - id: preflight
+        run: |
+          if ! bun .eas/agents/run.ts preflight; then
+            if [ -f agent-output/stop-report.md ]; then set-output stop_report "$(cat agent-output/stop-report.md)"; fi
+            exit 2
+          fi
 
   fingerprint:
     type: fingerprint
@@ -174,11 +183,11 @@ jobs:
   comment:
     name: Report iOS evidence on the PR
     type: github-comment
-    after: [check]
+    after: [preflight, check]
     if: ${{ github.event.pull_request.number }}
     params:
       payload: |
-        ${{ after.check.outputs.comment_body || '### ⚪ Agentic CI iOS: INCONCLUSIVE · the check produced no report' }}
+        ${{ after.check.outputs.comment_body || after.preflight.outputs.stop_report || '### ⚪ Agentic CI iOS: INCONCLUSIVE · the check produced no report' }}
 
   result:
     name: Require a verified PASS
