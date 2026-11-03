@@ -14,7 +14,7 @@ import {
 import { Screen } from '@/components/screen';
 import { HeaderIconButton } from '@/components/header-icon-button';
 import { leagueHeaderOptions } from '@/components/league-picker';
-import { dayWindow, shortDateLabel, windowIndex, type Ymd } from '@/domain/dates';
+import { dayWindow, windowIndex, type Ymd } from '@/domain/dates';
 import type { League } from '@/domain/league';
 import { parseScoresParams } from '@/navigation/hrefs';
 import { useCalendar } from '@/state/calendar';
@@ -24,6 +24,7 @@ import { colors, space, typography } from '@/theme';
 import { CALENDAR_AVAILABLE, DateSheet } from './date-sheet';
 import { DateStrip } from './date-strip';
 import { DayPage } from './day-page';
+import { scoresNavigationTitle } from './title';
 
 // Pages cover the anchor day plus 30 days either side. A date outside that
 // window moves the anchor, which rebuilds the pager around the new date.
@@ -109,7 +110,7 @@ export function ScoresScreen() {
     <Screen>
       <Stack.Screen
         options={{
-          title: shortDateLabel(selected),
+          title: scoresNavigationTitle(selected),
           headerTransparent: false,
           headerStyle: { backgroundColor: colors.background },
           headerShadowVisible: false,
