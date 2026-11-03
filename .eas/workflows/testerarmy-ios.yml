@@ -182,7 +182,8 @@ jobs:
             if [ -n "$PUBLICATION_URL" ]; then
               set-output publication_url "$PUBLICATION_URL"
             fi
-            set-output comment_body "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).comment_body || ""')"
+            VALUE="$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).comment_body || ""')"
+            if [ -n "$VALUE" ]; then set-output comment_body "$VALUE"; fi
           else
             set-output state INCONCLUSIVE
           fi
