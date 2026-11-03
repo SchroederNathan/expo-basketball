@@ -146,6 +146,7 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
       <SectionList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         sections={page ? pageSections(page) : []}
         keyExtractor={(row) => row.key}
         stickySectionHeadersEnabled={false}

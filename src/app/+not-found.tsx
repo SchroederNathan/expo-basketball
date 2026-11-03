@@ -8,7 +8,11 @@ export default function NotFoundRoute() {
   const router = useRouter();
   return (
     <Screen>
-      <ScrollView contentInsetAdjustmentBehavior="automatic" style={{ flex: 1, backgroundColor: colors.background }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
+        style={{ flex: 1, backgroundColor: colors.background }}
+      >
         <Notice
           title="This page doesn’t exist"
           message="The link may be old or mistyped."

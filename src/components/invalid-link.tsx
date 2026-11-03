@@ -12,6 +12,7 @@ export function InvalidLink({ subject }: { subject: 'game' | 'team' | 'player' }
     <Screen>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         style={{ flex: 1, backgroundColor: colors.background }}
       >
         <Stack.Screen options={{ title: '' }} />

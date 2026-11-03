@@ -58,6 +58,7 @@ export function TeamsScreen() {
       <SectionList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         sections={sections}
         keyExtractor={(team) => team.id}
         renderItem={({ item }) => <TeamRow league={league} team={item} />}

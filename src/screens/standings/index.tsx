@@ -97,6 +97,7 @@ export function StandingsScreen() {
       <ScrollView
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl

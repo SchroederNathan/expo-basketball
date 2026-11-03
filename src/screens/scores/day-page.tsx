@@ -29,6 +29,7 @@ export function DayPage({ league, date, zone, visible, width }: DayPageProps) {
     <FlatList
       style={{ width }}
       contentInsetAdjustmentBehavior="automatic"
+      showsVerticalScrollIndicator={false}
       data={state.kind === 'ready' ? state.data.games : []}
       keyExtractor={(game) => game.id}
       renderItem={({ item }) => <ScoreRow game={item} />}
