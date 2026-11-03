@@ -5,7 +5,7 @@ import { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useStandings } from '@/api/queries';
 import type { Standings } from '@/api/schemas';
-import { leagueHeaderOptions } from '@/components/league-picker';
+import { LeagueToolbar, leagueHeaderOptions } from '@/components/league-picker';
 import { Screen } from '@/components/screen';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
@@ -94,6 +94,7 @@ export function StandingsScreen() {
           ...leagueHeaderOptions({ value: league, onChange: setPreferredLeague }),
         }}
       />
+      <LeagueToolbar value={league} onChange={setPreferredLeague} />
       <ScrollView
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"

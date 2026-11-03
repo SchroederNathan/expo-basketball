@@ -6,7 +6,7 @@ import type { SearchHit } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
 import { Screen } from '@/components/screen';
 import { Headshot } from '@/components/headshot';
-import { leagueHeaderOptions } from '@/components/league-picker';
+import { LeagueToolbar, leagueHeaderOptions } from '@/components/league-picker';
 import { Notice } from '@/components/notice';
 import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
@@ -97,6 +97,7 @@ export function SearchScreen() {
           },
         }}
       />
+      <LeagueToolbar value={league} onChange={setPreferredLeague} />
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"

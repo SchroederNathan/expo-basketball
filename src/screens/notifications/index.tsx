@@ -2,7 +2,7 @@ import { Button, Host, Picker, Switch } from '@expo/ui';
 import DateTimePicker from '@expo/ui/community/datetime-picker';
 import { Stack, useRouter } from 'expo-router';
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Notice } from '@/components/notice';
 import { Screen } from '@/components/screen';
 import { SectionLabel } from '@/components/section-label';
@@ -364,7 +364,7 @@ export function NotificationsScreen() {
       <Stack.Screen
         options={{
           title: 'Notifications',
-          headerRight: () => (
+          headerRight: Platform.OS === 'ios' ? undefined : () => (
             <Pressable
               onPress={() => router.back()}
               accessibilityRole="button"
@@ -376,6 +376,15 @@ export function NotificationsScreen() {
           ),
         }}
       />
+      {/* A native item with an icon moves into the iPhone Duo's rail. A
+          text-only Done would stay in the horizontal bar. */}
+      {Platform.OS === 'ios' ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button icon="checkmark" variant="done" tintColor={colors.accent} accessibilityLabel="Done" onPress={() => router.back()}>
+            Done
+          </Stack.Toolbar.Button>
+        </Stack.Toolbar>
+      ) : null}
       <ScrollView
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"
