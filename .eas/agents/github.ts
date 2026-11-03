@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { demoIssueByCriteria } from './demo-issues';
 import { acceptanceMarker, type Acceptance } from './issue';
 import { shaSchema } from './result';
 
@@ -57,7 +58,8 @@ export class GitHub {
     if (written.id !== id || written.user.id !== actor || written.body !== body) throw new PublicationConflict('Exact comment write receipt mismatch.');
     return written;
   }
-  async pullRequest({ acceptance, branch, candidate, create = true }: { acceptance: Acceptance; branch: string; candidate: string; create?: boolean }) {
+  async pullRequest({ acceptance, criteria, branch, candidate, create = true }: { acceptance: Acceptance; criteria: string; branch: string; candidate: string; create?: boolean }) {
+    const entry = demoIssueByCriteria(criteria);
     const repository = this.options.repository;
     const head = `${repository.split('/')[0]}:${branch}`;
     const prs = z.array(prSchema).parse(await this.pages(`/pulls?state=all&head=${encodeURIComponent(head)}`));
@@ -72,9 +74,9 @@ export class GitHub {
       return { kind: 'reused', url: existing.html_url, number: existing.number };
     }
     if (!create) return null;
-    const body = `${marker}\n\nRepair demo issue #${acceptance.issue.number}.\n\nOriginal criteria: demo/issues/player-label.md at ${acceptance.target.sha}, SHA-256 ${acceptance.criteriaSha256}.\nIssue input SHA-256 ${acceptance.issue.sha256}.\nCandidate ${candidate}. Target ${acceptance.target.ref} at ${acceptance.target.sha}.\n\nController typecheck and application tests passed. Native issue acceptance remains pending downstream Agentic CI. No merge or deployment is authorized.`;
+    const body = `${marker}\n\nRepair demo issue #${acceptance.issue.number}.\n\nOriginal criteria: ${entry.criteria} at ${acceptance.target.sha}, SHA-256 ${acceptance.criteriaSha256}.\nIssue input SHA-256 ${acceptance.issue.sha256}.\nCandidate ${candidate}. Target ${acceptance.target.ref} at ${acceptance.target.sha}.\n\nController typecheck and application tests passed. Native issue acceptance remains pending downstream Agentic CI. No merge or deployment is authorized.`;
     const pr = prSchema.parse(await this.request(`/repos/${repository}/pulls`, 'POST', {
-      title: `Fix Jordan Vale stat labels for demo issue #${acceptance.issue.number}`, head: branch, base: acceptance.target.ref, body,
+      title: `${entry.pullRequestTitle} for demo issue #${acceptance.issue.number}`, head: branch, base: acceptance.target.ref, body,
     }));
     if (pr.base.sha !== acceptance.target.sha) throw new PublicationConflict(`Created PR target differs from the frozen SHA. Preserve and reconcile ${pr.html_url}.`);
     if (!valid(pr)) throw new Error('PR write receipt mismatch.');

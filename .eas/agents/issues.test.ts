@@ -7,7 +7,9 @@ import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { executeChange, assertChangedPaths } from './change';
 import { demoIssueMarker, readAcceptance, issueDigest } from './issue';
-import { digest, issueVerdictSchema } from './result';
+import { digest, verdictSchemaFor } from './result';
+
+const issueVerdictSchema = verdictSchemaFor({ path: 'demo/issues/player-label.md' });
 import type { CheckOptions } from './run';
 
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();

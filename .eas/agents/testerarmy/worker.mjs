@@ -9,7 +9,7 @@ process.once('SIGINT', () => cancellation.abort());
 process.once('SIGTERM', () => cancellation.abort());
 const timer = setInterval(() => { if (existsSync(context.abortFile)) cancellation.abort(); }, 200);
 try {
-  const outcome = await run({ cwd: process.cwd(), config: resolve('e2e.config.ts'), files: ['tests/jordan.e2e.ts'], interruptSignal: cancellation.signal });
+  const outcome = await run({ cwd: process.cwd(), config: resolve('e2e.config.ts'), files: [context.test], interruptSignal: cancellation.signal });
   writeFileSync('outcome.json', JSON.stringify({ exitCode: outcome.exitCode, status: outcome.status, reportPath: outcome.reportPath }), { flag: 'wx', mode: 0o600, flush: true });
   process.exitCode = outcome.exitCode;
 } finally { clearInterval(timer); }

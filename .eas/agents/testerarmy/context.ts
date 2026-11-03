@@ -5,6 +5,7 @@ import { targetSchema } from '../result';
 export { identityLabel } from '../simulator';
 
 export const contextSchema = z.strictObject({ attemptId: z.uuid(), target: targetSchema,
+  test: z.string().regex(/^tests\/[a-z0-9-]+\.e2e\.ts$/),
   ledgerFile: z.string().refine(isAbsolute), abortFile: z.string().refine(isAbsolute),
   cache: z.union([z.literal('off'), z.strictObject({ mode: z.enum(['read-write', 'read-only']), dir: z.string().refine(isAbsolute), strict: z.boolean() })]).default('off'),
 });

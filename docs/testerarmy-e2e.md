@@ -130,6 +130,10 @@ The ordinary workflow uses no action cache. The replay unit does not reuse previ
 
 ## Publish the PR evidence
 
+A PR from an `agent/issue-*` branch into `release/**` starts this workflow by itself. The PR body carries the frozen acceptance receipt, so the run needs no issue inputs. The run uploads its media to the `AGENT_EVIDENCE_UPLOAD_ISSUE` staging issue, and the Expo bot posts one **E2E iOS** comment on the PR. A rerun updates that comment. A PR without a receipt gets an **E2E iOS: not run** comment.
+
+Each demo issue in [`.eas/agents/demo-issues.ts`](../.eas/agents/demo-issues.ts) names its own e2e test file, test title, and checks. The controller copies only that test into the attempt.
+
 Public evidence in this same public repository is already authorized. After artifact-only seed and repair proof, dispatch the repaired candidate with `-F pr_number=4`. The current PR head, ref, repository, and original acceptance receipt must still match. A moving head prevents a current-head publication claim.
 
 The new adapter validates the genuine `report-1` document and e2e process exit. It publishes a separate `TesterArmyResultV1`. It does not forge a legacy Codex Result. The native publisher retains checksum-pinned gh `2.103.1`, immutable manifests, durable create intents, exact author and comment ownership, bounded recovery, anonymous media hashes, rendered screenshot and video verification, and live destination checks.

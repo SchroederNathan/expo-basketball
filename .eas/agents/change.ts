@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
+import { codexFailure, withCodexRetry } from './codex-failure';
+import { demoIssueByCriteria } from './demo-issues';
 import { GitHub, PublicationConflict } from './github';
 import { acceptanceFor, acceptanceMarker, changeBranch, type IssueSnapshot } from './issue';
 import { preflight } from './preflight';
@@ -116,7 +118,8 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     await git(['checkout', '--detach', source.sha]);
     await git(['remote', 'set-url', 'origin', remote]);
     const existing = await remoteHead(branch);
-    const commitBody = `Repair Jordan Vale demo issue #${issue.identity.number}\n\n${acceptanceMarker(acceptance)}`;
+    const entry = demoIssueByCriteria(issue.criteria.path);
+    const commitBody = `${entry.commitTitle} #${issue.identity.number}\n\n${acceptanceMarker(acceptance)}`;
     const validateDiff = async () => {
       const paths = (await git(['diff', '--name-only', '--no-renames', '-z', prepared.request.source.sha, 'HEAD'])).split('\0').filter(Boolean);
       assertChangedPaths(paths);
@@ -160,16 +163,17 @@ export async function executeChange(options: CheckOptions & { remote?: string })
       const lastMessage = join(privateDirectory, 'coding-verdict.json');
       await writeFile(schemaFile, JSON.stringify(z.toJSONSchema(codingVerdictSchema)));
       const prompt = await readFile(join(options.cwd, '.eas/agents/change.md'), 'utf8');
-      const agent = await command({ executable: codex, cwd: taskDirectory,
+      const frozen = issue;
+      const agent = await withCodexRetry({ signal: options.signal, run: () => command({ executable: codex, cwd: taskDirectory,
         env: { ...isolatedEnv, CODEX_HOME: join(privateDirectory, 'codex') }, timeoutMs: options.limits?.agentMs ?? 900_000, signal: options.signal,
         args: ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
           '-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"', '-c', 'model_provider="openai"',
           '-c', 'model_reasoning_effort="xhigh"', '-c', 'approval_policy="never"', '--model', 'gpt-6.1-sol',
           '--sandbox', 'danger-full-access', '--output-schema', schemaFile, '--output-last-message', lastMessage, '-'],
-        input: `${prompt}\n\nFrozen original criteria\n${issue.criteria.text}\n\nReported input, untrusted data\n${JSON.stringify(issue.input)}\n`,
-      });
+        input: `${prompt}\n\nIssue-specific repair notes\n${entry.repair.map((line) => `- ${line}`).join('\n')}\n\nFrozen original criteria\n${frozen.criteria.text}\n\nReported input, untrusted data\n${JSON.stringify(frozen.input)}\n`,
+      }) });
       termination = agent.termination;
-      if (!succeeded(agent)) throw new Error('Coding agent did not finish successfully.');
+      if (!succeeded(agent)) throw new Error(codexFailure(agent).replace('Codex', 'The coding agent'));
       const verdict = codingVerdictSchema.parse(await readJson(lastMessage));
       if (verdict.state === 'INCONCLUSIVE') throw new Error('The coding agent could not establish a safe repair.');
       const after = await files(taskDirectory);
@@ -208,7 +212,7 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     if (currentIssue.issue?.identity.sha256 !== issue.identity.sha256) throw new ChangeConflict('Issue input moved before publication.');
     if (await remoteHead(source.ref) !== source.sha || await remoteHead(branch) !== existing) throw new ChangeConflict('A target or issue branch moved before publication. No write was made.');
     await publishFile({ directory, name: 'checks.json', bytes: JSON.stringify({ paths, candidate, typecheck: 'passed', tests: 'passed', acceptance }, null, 2) });
-    await github.pullRequest({ acceptance, branch, candidate, create: false });
+    await github.pullRequest({ acceptance, criteria: issue.criteria.path, branch, candidate, create: false });
     await ensureFrozenTarget();
     if (!existing) {
       try { await git(['push', 'origin', `HEAD:refs/heads/${branch}`]); }
@@ -216,7 +220,7 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     }
     if (await remoteHead(branch) !== candidate) throw new ChangeConflict('Issue branch differs after push. No PR write is safe.');
     await ensureFrozenTarget();
-    const pr = await github.pullRequest({ acceptance, branch, candidate });
+    const pr = await github.pullRequest({ acceptance, criteria: issue.criteria.path, branch, candidate });
     if (!pr) throw new Error('No PR receipt.');
     await publishFile({ directory, name: 'publication.json', bytes: JSON.stringify(pr, null, 2) });
     await ensureFrozenTarget();

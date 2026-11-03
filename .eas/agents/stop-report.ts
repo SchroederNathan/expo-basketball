@@ -12,9 +12,10 @@ const explanations: readonly (readonly [string, string])[] = [
   ['Requested branch/source disagreement.', 'The branch moved while the run started. A newer run checks the latest commit.'],
   ['Workflow checkout differs from the candidate. Dispatch at the exact SHA.', 'The checked-out source differs from the PR head, so the check did not run.'],
   ['Enable trusted automation for this exact repository before dispatch.', 'Trusted automation is not enabled for this repository in the EAS preview environment.'],
+  ['Frozen acceptance issue is required.', 'This PR has no frozen issue acceptance receipt, so the e2e test did not run. E2E iOS checks PRs that the issue agent opens.'],
 ];
 
-export function stopReport(message: string, env: NodeJS.ProcessEnv) {
+export function stopReport(message: string, env: NodeJS.ProcessEnv, title = 'Agentic CI iOS') {
   const explanation = explanations.find(([known]) => message.includes(known))?.[1]
     ?? 'The source or setup checks did not pass, so the check did not run. Open the workflow for details.';
   const sha = /^[a-f0-9]{40}$/.test(env.AGENT_SOURCE_SHA ?? '') ? env.AGENT_SOURCE_SHA! : null;
@@ -22,5 +23,5 @@ export function stopReport(message: string, env: NodeJS.ProcessEnv) {
   const run = /^https:\/\/expo\.dev\/accounts\/exponathan\/projects\/expo-basketball\/workflows\/[a-f0-9-]{36}$/.test(env.AGENT_RUN_URL ?? '') ? env.AGENT_RUN_URL! : null;
   const source = [sha && repository ? `[\`${sha.slice(0, 7)}\`](https://github.com/${repository}/commit/${sha})${env.AGENT_SOURCE_REF ? ` on ${plain(env.AGENT_SOURCE_REF)}` : ''}` : null,
     run ? `[Workflow](${run})` : null].filter(Boolean).join(' · ');
-  return [`### ⚪ Agentic CI iOS: not run`, ...(source ? [source] : []), '', `**${explanation}**`].join('\n');
+  return [`### ⚪ ${title}: not run`, ...(source ? [source] : []), '', `**${explanation}**`].join('\n');
 }

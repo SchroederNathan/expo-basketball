@@ -20,7 +20,7 @@ The workflow requests only `contents: read` and `issues: read`. GitHub documents
 ## Start an issue workflow
 
 1. Use an open issue in `SchroederNathan/expo-basketball` with an author association of `OWNER`, `MEMBER`, or `COLLABORATOR`.
-2. Include the exact marker `<!-- lob-demo:player-label -->` in its body and retain the original criteria from `demo/issues/player-label.md`.
+2. Include exactly one demo marker in its body, such as `<!-- lob-demo:scores-title -->`. The marker names an entry in [`.eas/agents/demo-issues.ts`](../.eas/agents/demo-issues.ts). That entry pins the original criteria file, the device checks, the e2e test, and the repair notes. The bridge accepts any well-formed marker. EAS preflight rejects an unknown name, two different names, or criteria bytes that differ from the pinned digest.
 3. As a repository writer, maintainer, or administrator, apply `agent` for Issue to PR or `agent-triage` for Bug triage.
 4. Inspect the **Agent issue bridge** Actions log for the operation, workflow path, issue number, target branch, and resolved SHA.
 5. Inspect that source in the original project's EAS workflow history for the cloud result and evidence. Follow the [existing result and recovery instructions](agentic-workflows.md#read-the-result-and-recover).

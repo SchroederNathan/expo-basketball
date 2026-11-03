@@ -11,7 +11,8 @@ import { digest, publishFile, sanitize, type Target } from '../result';
 import { identityLabel } from '../simulator';
 import { probeMedia } from '../evidence-media';
 import { evidencePhase, type EvidencePhase } from '../evidence-phase';
-import { checkIds, checkSchema, failureKinds, frameworkSchema, originalCriteriaSha256, originalFixtureSha256 } from './result';
+import { demoIssueByCriteria } from '../demo-issues';
+import { checkSchema, e2eFor, failureKinds, frameworkSchema, originalFixtureSha256 } from './result';
 import { type Ledger } from './provider';
 
 const require = createRequire(import.meta.url);
@@ -57,6 +58,8 @@ type Artifact = Attempt['artifacts'][number];
 
 export function admitReport(input: unknown, ledger: Ledger, target: Target, actualExit: number) {
   const report = parseReport(input);
+  const e2e = e2eFor(target.criteria);
+  const checkIds: readonly string[] = e2e.checks;
   const run = report.run;
   const result = run.results[0];
   const attempt = result?.attempts[0];
@@ -64,8 +67,8 @@ export function admitReport(input: unknown, ledger: Ledger, target: Target, actu
     run.project.id !== 'lob-testerarmy' || run.targets.length !== 1 || run.targets[0]?.id !== 'ios' || run.targets[0]?.platform !== 'ios' ||
     run.targets[0]?.engine.name !== 'mobile' || run.targets[0]?.engine.version !== '0.12.5' || run.results.length !== 1 ||
     !result || result.kind !== 'test' || !result.selected || result.repeat !== 0 || result.agent !== 'default' ||
-    result.targetId !== 'ios' || result.platform !== 'ios' || result.file !== 'tests/jordan.e2e.ts' ||
-    result.titlePath.join('/') !== 'Jordan original acceptance' || result.attempts.length !== 1 ||
+    result.targetId !== 'ios' || result.platform !== 'ios' || result.file !== e2e.file ||
+    result.titlePath.join('/') !== e2e.title || result.attempts.length !== 1 ||
     result.skip || !attempt || attempt.skip || attempt.index !== 0 || attempt.cleanup !== 'complete' || attempt.secondaryErrors.length ||
     run.errors.length || run.carried || run.filters?.length || run.changes || run.explore || run.serialGroups.length ||
     run.summary.selected !== 1 || run.summary.executed !== 1 || run.summary.skipped || run.summary.flaky || run.summary.interrupted ||
@@ -90,18 +93,18 @@ export function admitReport(input: unknown, ledger: Ledger, target: Target, actu
   const identity = identityLabel(target);
   const identities = attempt.steps.filter((step) => step.kind === 'assertion' && step.label.includes(identity) && step.status === 'passed');
   if (identities.length !== 2 || !identities.some((step) => step.index < start.step.index) ||
-    !identities.some((step) => step.index > screenshot('current-player').step.index && step.index < end.step.index)) throw new Error('Exact embedded identity is required before and after navigation.');
+    !identities.some((step) => step.index > screenshot(checkIds.at(-1)!).step.index && step.index < end.step.index)) throw new Error('Exact embedded identity is required before and after navigation.');
   const checks = checkIds.map((id) => {
     const { step } = screenshot(id);
     const previous = attempt.steps.filter((candidate) => candidate.api === 'app.screenshot' && candidate.index < step.index).at(-1);
     const assertions = attempt.steps.filter((candidate) => candidate.kind === 'assertion' && candidate.index > (previous?.index ?? -1) && candidate.index < step.index);
     if (!assertions.length) throw new Error('Named check has no deterministic assertions.');
     return checkSchema.parse({ id, state: assertions.some((assertion) => assertion.status !== 'passed') ? 'FAIL' : 'PASS',
-      detail: assertions.some((assertion) => assertion.status !== 'passed') ? 'Deterministic assertion failed on the scoped player or search screen.' : 'All scoped deterministic assertions passed.',
+      detail: assertions.some((assertion) => assertion.status !== 'passed') ? 'A scoped deterministic assertion failed on this screen.' : 'All scoped deterministic assertions passed.',
       screenshot: `${id}.png`, assertionIds: assertions.map((assertion) => assertion.id) });
   });
   const assertionIds = new Set(checks.flatMap((check) => check.assertionIds));
-  if (failed.some((step) => !assertionIds.has(step.id))) throw new Error('Failure lies outside the four admitted product checks.');
+  if (failed.some((step) => !assertionIds.has(step.id))) throw new Error('Failure lies outside the admitted product checks.');
   const state = checks.some((check) => check.state === 'FAIL') ? 'FAIL' : 'PASS';
   const exit = state === 'FAIL' ? 1 : 0;
   if (actualExit !== exit || run.exitCode !== exit || run.status !== (exit ? 'failed' : 'passed') || result.status !== run.status ||
@@ -144,7 +147,7 @@ export async function admitEvidence({ admission, root, directory, target, ledger
 }) {
   if (digest(await readFile(join(cwd, target.criteria.path))) !== target.criteria.sha256 ||
     digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'))) !== target.fixture.sha256 ||
-    target.criteria.sha256 !== originalCriteriaSha256 || target.fixture.sha256 !== originalFixtureSha256) throw new Error('Original criteria or fixture bytes changed.');
+    target.criteria.sha256 !== demoIssueByCriteria(target.criteria.path).criteriaSha256 || target.fixture.sha256 !== originalFixtureSha256) throw new Error('Original criteria or fixture bytes changed.');
   const staging = await mkdtemp(join(tmpdir(), 'lob-testerarmy-admission-'));
   let promoting = false;
   try {

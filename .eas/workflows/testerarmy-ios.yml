@@ -37,6 +37,11 @@ name: E2E iOS
         required: false
         default: false
         description: Run two repaired recording passes and one strict verified replay
+  # PRs that the issue agent opens carry the frozen acceptance receipt.
+  pull_request:
+    branches: ['release/**']
+    types: [opened, reopened, synchronize, ready_for_review]
+    if: ${{ !github.event.pull_request.draft && github.repository == 'SchroederNathan/expo-basketball' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'agent/issue-') }}
 
 permissions:
   account:
@@ -57,14 +62,17 @@ jobs:
     name: Verify trusted candidate
     environment: preview
     env:
-      AGENT_REPOSITORY: ${{ inputs.repository }}
-      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
-      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
-      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+      AGENT_REPOSITORY: ${{ github.repository || inputs.repository }}
+      AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
       AGENT_TASK: acceptance
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
       AGENT_CRITERIA_SHA256: ${{ inputs.criteria_sha256 || '' }}
+      AGENT_RUN_URL: ${{ workflow.url }}
+    outputs:
+      stop_report: ${{ steps.preflight.outputs.stop_report }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -76,7 +84,12 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y ffmpeg
           fi
-      - run: bun .eas/agents/testerarmy/controller.ts preflight
+      - id: preflight
+        run: |
+          if ! bun .eas/agents/testerarmy/controller.ts preflight; then
+            [ -f agent-output/testerarmy/stop-report.md ] && set-output stop_report "$(cat agent-output/testerarmy/stop-report.md)"
+            exit 2
+          fi
 
   fingerprint:
     type: fingerprint
@@ -122,10 +135,10 @@ jobs:
     after: [build, repack]
     environment: preview
     env:
-      AGENT_REPOSITORY: ${{ inputs.repository }}
-      AGENT_SOURCE_REF: ${{ inputs.target_ref }}
-      AGENT_SOURCE_SHA: ${{ inputs.candidate_sha }}
-      AGENT_PR_NUMBER: ${{ inputs.pr_number || '' }}
+      AGENT_REPOSITORY: ${{ github.repository || inputs.repository }}
+      AGENT_SOURCE_REF: ${{ github.event.pull_request.head.ref || inputs.target_ref }}
+      AGENT_SOURCE_SHA: ${{ github.event.pull_request.head.sha || inputs.candidate_sha }}
+      AGENT_PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number || '' }}
       AGENT_TASK: acceptance
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number || '' }}
       AGENT_ISSUE_DIGEST: ${{ inputs.issue_digest || '' }}
@@ -137,8 +150,10 @@ jobs:
       AGENT_NATIVE_SOURCE_BUILD_ID: ${{ needs.get_build.outputs.build_id || '' }}
       AGENT_NATIVE_SOURCE_SHA: ${{ needs.get_build.outputs.git_commit_hash || '' }}
       AGENT_FINGERPRINT: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      AGENT_BOT_COMMENT: ${{ github.event.pull_request.number && '1' || '' }}
     outputs:
       state: ${{ steps.check.outputs.state }}
+      comment_body: ${{ steps.check.outputs.comment_body }}
       attempt_id: ${{ steps.check.outputs.attempt_id }}
       observed_state: ${{ steps.check.outputs.observed_state }}
       publication_state: ${{ steps.check.outputs.publication_state }}
@@ -167,6 +182,7 @@ jobs:
             if [ -n "$PUBLICATION_URL" ]; then
               set-output publication_url "$PUBLICATION_URL"
             fi
+            set-output comment_body "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/testerarmy/status.json", "utf8")).comment_body || ""')"
           else
             set-output state INCONCLUSIVE
           fi
@@ -176,6 +192,16 @@ jobs:
           type: other
           name: testerarmy-ios-evidence
           path: agent-output/testerarmy/public/**/*
+
+  # The Expo bot posts the e2e report on agent PRs and updates it on reruns.
+  comment:
+    name: Report e2e evidence on the PR
+    type: github-comment
+    after: [preflight, check]
+    if: ${{ github.event.pull_request.number }}
+    params:
+      payload: |
+        ${{ after.check.outputs.comment_body || after.preflight.outputs.stop_report || '### ⚪ E2E iOS: INCONCLUSIVE · the test produced no report' }}
 
   result:
     name: Require a verified PASS

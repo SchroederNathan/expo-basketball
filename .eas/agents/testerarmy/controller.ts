@@ -5,6 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { preflight } from '../preflight';
+import { demoIssueByCriteria } from '../demo-issues';
+import { stopReport } from '../stop-report';
 import { command, safeEnvironment, succeeded, type Command } from '../process';
 import { buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema, type Target } from '../result';
 import { verifyBuild, writeSimulatorProject } from '../simulator';
@@ -69,7 +71,7 @@ async function runtime(directory: string, context: z.infer<typeof contextSchema>
   for (const name of ['context', 'e2e.config']) {
     await writeFile(join(directory, `${name}.ts`), `export ${name === 'context' ? '*' : '{ default }'} from ${JSON.stringify(join(packageDirectory, `${name}.ts`))};\n`, { mode: 0o600 });
   }
-  await copyFile(join(packageDirectory, 'tests/jordan.e2e.ts'), join(directory, 'tests/jordan.e2e.ts'));
+  await copyFile(join(packageDirectory, context.test), join(directory, context.test));
   const file = join(directory, 'context.json');
   await writeFile(file, JSON.stringify(contextSchema.parse(context)), { flag: 'wx', mode: 0o600 });
   return file;
@@ -130,7 +132,7 @@ export async function executeTesterArmy(options: Options) {
     await persistSubscription({ file: authFile, eas, cwd: options.cwd, env: options.env });
     auth = 'persisted';
     const abortFile = join(privateDirectory, 'abort');
-    const contextFile = await runtime(task, { attemptId, target, ledgerFile, abortFile, cache: options.cache ?? 'off' });
+    const contextFile = await runtime(task, { attemptId, target, test: demoIssueByCriteria(target.criteria.path).e2e.file, ledgerFile, abortFile, cache: options.cache ?? 'off' });
     execution = 'unfinished';
     const run = await runWorker({ cwd: task, env: { ...runnerEnvironment(options.env, privateDirectory, xdg), TESTERARMY_CONTEXT: contextFile },
       abortFile, signal: options.signal });
@@ -237,5 +239,12 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { process.stderr.write('TesterArmy has no verified result. Inspect the admitted inputs and controller artifacts.\n'); process.exitCode = 2; });
+  main().catch(async (error: unknown) => {
+    if (process.argv[2] === 'preflight') {
+      const reason = error instanceof z.ZodError ? 'Invalid controller inputs.' : error instanceof Error ? error.message : 'Unknown error.';
+      try { await mkdir('agent-output/testerarmy', { recursive: true }); await writeFile('agent-output/testerarmy/stop-report.md', stopReport(reason, process.env, 'E2E iOS')); } catch {}
+    }
+    process.stderr.write('TesterArmy has no verified result. Inspect the admitted inputs and controller artifacts.\n');
+    process.exitCode = 2;
+  });
 }

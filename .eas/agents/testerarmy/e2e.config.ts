@@ -8,7 +8,7 @@ import { ownedProvider, projectId } from './provider';
 
 const context = runtimeContext();
 export default {
-  projectId: 'lob-testerarmy', tests: 'tests/jordan.e2e.ts', output: 'output',
+  projectId: 'lob-testerarmy', tests: context.test, output: 'output',
   targets: [{ name: 'ios', app: { bundleId: 'dev.expo.basketball' }, video: 'on', trace: 'on',
     engine: mobile({ platform: 'ios', videoTouches: false,
       device: ownedProvider(easSimulators({ projectId, buildId: context.target.native.installed,

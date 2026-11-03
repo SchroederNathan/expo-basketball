@@ -1,10 +1,12 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { criteriaPaths, demoIssueKey, demoIssues, demoMarker } from './demo-issues';
 import { digest, digestSchema, issueRefSchema, sourceSchema, type Source } from './result';
 
-export const criteriaPath = 'demo/issues/player-label.md';
-export const demoIssueMarker = '<!-- lob-demo:player-label -->';
+export const criteriaPath = demoIssues['player-label'].criteria;
+export const demoIssueMarker = demoMarker('player-label');
+
 const issueInputSchema = z.object({
   id: z.number().int().positive(), node_id: z.string().min(1), number: z.number().int().positive(),
   state: z.literal('open'), title: z.string().min(1).max(500), body: z.string().min(1).max(20_000),
@@ -15,7 +17,7 @@ const issueInputSchema = z.object({
 export const issueSnapshotSchema = z.strictObject({
   identity: issueRefSchema,
   input: issueInputSchema.omit({ pull_request: true }),
-  criteria: z.strictObject({ path: z.literal(criteriaPath), sha256: digestSchema, text: z.string().min(1) }),
+  criteria: z.strictObject({ path: z.enum(criteriaPaths), sha256: digestSchema, text: z.string().min(1) }),
 });
 export type IssueSnapshot = z.infer<typeof issueSnapshotSchema>;
 export const acceptanceSchema = z.strictObject({
@@ -56,11 +58,13 @@ export async function freezeIssue({ env, cwd, get, expected }: {
   const raw = issueInputSchema.parse(await get(`/issues/${number}`));
   if (raw.pull_request !== undefined || raw.number !== number ||
     raw.html_url !== `https://github.com/${env.AGENT_REPOSITORY}/issues/${number}` ||
-    !raw.body.includes(demoIssueMarker)) throw new Error('Unknown demo issue or mismatched issue identity.');
+    demoIssueKey(raw.body) === null) throw new Error('Unknown demo issue or mismatched issue identity.');
+  const entry = demoIssues[demoIssueKey(raw.body)!];
   const { pull_request: _, ...input } = raw;
   const identity = issueRefSchema.parse({ number, id: raw.id, nodeId: raw.node_id, sha256: issueDigest(input) });
-  const text = await readFile(join(cwd, criteriaPath), 'utf8');
-  const criteria = { path: criteriaPath, text, sha256: digest(text) };
+  const text = await readFile(join(cwd, entry.criteria), 'utf8');
+  const criteria = { path: entry.criteria, text, sha256: digest(text) };
+  if (criteria.sha256 !== entry.criteriaSha256) throw new Error('Issue input or original acceptance criteria changed. Dispatch a newly reviewed input.');
   const wantedIssue = expected?.issue.sha256 ?? env.AGENT_ISSUE_DIGEST;
   const wantedCriteria = expected?.criteriaSha256 ?? env.AGENT_CRITERIA_SHA256;
   if ((wantedIssue && identity.sha256 !== wantedIssue) || (wantedCriteria && criteria.sha256 !== wantedCriteria)) {

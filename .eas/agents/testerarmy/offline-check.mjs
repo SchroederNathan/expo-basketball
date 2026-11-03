@@ -149,12 +149,17 @@ try {
   counters.assertions+=2;
 
   const collectContext=join(directory,'collect-context.json');
-  await writeFile(collectContext,JSON.stringify({attemptId,target,ledgerFile:join(directory,'collect-lease.json'),abortFile:join(directory,'collect-abort')}));
+  await writeFile(collectContext,JSON.stringify({attemptId,target,test:'tests/jordan.e2e.ts',ledgerFile:join(directory,'collect-lease.json'),abortFile:join(directory,'collect-abort')}));
   delete process.env.TESTERARMY_CONTEXT;
   await assert.rejects(list({cwd:packageDirectory,config:join(packageDirectory,'e2e.config.ts'),files:['tests/jordan.e2e.ts']}),/controller-validated installed build context/);
   process.env.TESTERARMY_CONTEXT=collectContext;
   const collected=await list({cwd:packageDirectory,config:join(packageDirectory,'e2e.config.ts'),files:['tests/jordan.e2e.ts']});
   verify(collected.pairs.length===1&&collected.pairs[0].target==='ios','Actual pinned mobile/EAS/ChatGPT config and Jordan test collect under Node without network.');
+  const scoresTarget=targetSchema.parse({...target,criteria:{path:'demo/issues/scores-title.md',sha256:digest(await readFile(join(cwd,'demo/issues/scores-title.md')))}});
+  await writeFile(collectContext,JSON.stringify({attemptId,target:scoresTarget,test:'tests/scores-title.e2e.ts',ledgerFile:join(directory,'collect-lease.json'),abortFile:join(directory,'collect-abort')}));
+  const scores=await list({cwd:packageDirectory,config:join(packageDirectory,'e2e.config.ts'),files:['tests/scores-title.e2e.ts']});
+  verify(scores.pairs.length===1&&scores.pairs[0].target==='ios','The Scores title test collects under the same pinned config without network.');
+  await writeFile(collectContext,JSON.stringify({attemptId,target,test:'tests/jordan.e2e.ts',ledgerFile:join(directory,'collect-lease.json'),abortFile:join(directory,'collect-abort')}));
   await mkdir(join(directory,'tests'));
   await copyFile(join(packageDirectory,'tests/jordan.e2e.ts'),join(directory,'tests/jordan.e2e.ts'));
   await writeFile(join(directory,'context.ts'),`export * from ${JSON.stringify(join(packageDirectory,'context.ts'))};`);
