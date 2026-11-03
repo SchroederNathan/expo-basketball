@@ -85,7 +85,9 @@ export async function derivePlayback({ directory, original, output, env, phase =
   if (!succeeded(pts)) throw new Error('Playback timing validation failed.');
   const timeline = z.object({ frames: z.array(z.object({ pts_time: z.string() })), format: z.object({ duration: z.string() }) }).parse(JSON.parse(pts.stdout));
   const times = timeline.frames.map((frame) => Number(frame.pts_time));
-  if (Math.abs(Number(timeline.format.duration) - before.frames / 15) > 0.00001 || times.length !== before.frames || times[0] !== 0 || times.some((time, index) => !Number.isFinite(time) || index > 0 && Math.abs(time - times[index - 1]! - 1 / 15) > 0.000002)) throw new Error('Playback normalized timing mismatch.');
+  // MP4 rounds the container duration to the movie timescale, often milliseconds.
+  // Each frame timestamp is still checked exactly below.
+  if (Math.abs(Number(timeline.format.duration) - before.frames / 15) > 0.001 || times.length !== before.frames || times[0] !== 0 || times.some((time, index) => !Number.isFinite(time) || index > 0 && Math.abs(time - times[index - 1]! - 1 / 15) > 0.000002)) throw new Error('Playback normalized timing mismatch.');
   if (digest(await readFile(join(directory, original))) !== digest(source)) throw new Error('Original recording changed during derivation.');
   return { path: output, sha256: digest(bytes), bytes: bytes.length, transform: { id: playbackTransform, sourceSha256: digest(source),
     frames: before.frames, fps: 15, timing: 'normalized', ffmpeg: version.stdout.split('\n')[0]!, args, decoderArgs } };
