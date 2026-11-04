@@ -23,7 +23,7 @@ import { colors, layout, space } from '@/theme';
 import { BoxScore } from './box-score';
 import { FlowChart } from './flow-chart';
 import { GameStandings } from './game-standings';
-import { GameHero, GameStatusTitle } from './hero';
+import { GameHero } from './hero';
 import { GameLeaders } from './leaders';
 import { Linescore } from './linescore';
 import { PeriodChips, PlayRow } from './plays';
@@ -49,6 +49,10 @@ async function shareGame(game: Game): Promise<void> {
   } catch {
     // The share sheet is unavailable here, for example in a browser without it.
   }
+}
+
+function EmptyTitle() {
+  return <View />;
 }
 
 export function GameScreen() {
@@ -97,9 +101,12 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
     <Screen>
       <Stack.Screen
         options={{
+          // The hero already shows the status and clock, so the bar shows no
+          // title. An empty title view hides the text but keeps `title` as
+          // the native item title, which the back button menu lists.
           title: 'Game',
           headerTransparent: true,
-          headerTitle: game ? () => <GameStatusTitle game={game} /> : undefined,
+          headerTitle: EmptyTitle,
           headerRight: game
             ? () => (
                 <HeaderIconButton
