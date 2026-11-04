@@ -379,6 +379,7 @@ export function NotificationsScreen() {
       <ScrollView
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >

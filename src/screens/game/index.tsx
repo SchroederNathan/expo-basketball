@@ -114,6 +114,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         data={items}
         keyExtractor={(item) => item.key}
         renderItem={({ item }) => {

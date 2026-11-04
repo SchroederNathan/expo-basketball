@@ -100,6 +100,7 @@ export function SearchScreen() {
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         data={results}

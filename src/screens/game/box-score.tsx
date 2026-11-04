@@ -160,7 +160,7 @@ export function BoxScore({ league, box, side, onSideChange }: BoxScoreProps) {
         </View>
         <ScrollView
           horizontal
-          showsHorizontalScrollIndicator
+          showsHorizontalScrollIndicator={false}
           importantForAccessibility="no-hide-descendants"
           accessibilityElementsHidden
           contentContainerStyle={{ paddingRight: layout.screenPadding }}

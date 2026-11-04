@@ -70,6 +70,7 @@ export function PlayersScreen() {
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         data={state.kind === 'ready' ? state.data.players : []}
         keyExtractor={(row) => row.id}
         renderItem={({ item }) => <LeaderRow league={league} row={item} statLabel={statLabel} />}

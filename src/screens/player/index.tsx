@@ -148,6 +148,7 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
       <ScrollView
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl refreshing={player.refreshing} onRefresh={player.refresh} tintColor={colors.textTertiary} />
