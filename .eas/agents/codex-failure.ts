@@ -16,15 +16,23 @@ const categories: readonly (readonly [string, RegExp])[] = [
 
 type CodexRun = { termination: Termination; stdout: string; stderr: string };
 
-function category(run: CodexRun) {
+// The output also holds the agent's transcript, and source files it read can name
+// any HTTP status. Codex prints its own failure on ERROR lines, so those decide.
+function failureText(run: CodexRun) {
   const output = `${run.stderr}\n${run.stdout}`;
+  const errors = output.split('\n').filter((line) => /^\s*ERROR\b/.test(line)).join('\n');
+  return errors || output;
+}
+
+function category(run: CodexRun) {
+  const output = failureText(run);
   return categories.find(([, pattern]) => pattern.test(output))?.[0] ?? 'unrecognized error';
 }
 
 export function codexFailure(run: CodexRun) {
   if (run.termination.kind === 'timeout') return 'Codex did not finish successfully (timed out).';
   if (run.termination.kind !== 'exited') return `Codex did not finish successfully (${run.termination.kind}).`;
-  const output = `${run.stderr}\n${run.stdout}`;
+  const output = failureText(run);
   const status = /\b(?:status|http|code)\D{0,4}([45]\d\d)\b/i.exec(output)?.[1];
   return `Codex did not finish successfully (exit ${run.termination.code}, ${category(run)}${status ? `, HTTP ${status}` : ''}).`;
 }
