@@ -13,10 +13,7 @@ export function GameLeaders({ league, leaders }: { league: League; leaders: read
       {leaders.map((leader) => (
         <RowLink key={leader.id} href={playerHref({ league, id: leader.id })}
             accessibilityLabel={`${leader.name}, ${leader.line}`}
-            style={[
-              styles.tile,
-              { borderLeftColor: leader.accent },
-            ]}
+            style={styles.tile}
           >
             <Headshot uri={leader.headshot} name={leader.name} size={40} />
             <View style={styles.text}>
@@ -49,7 +46,6 @@ const styles = StyleSheet.create({
     padding: space.sm,
     borderRadius: radius.md,
     borderCurve: 'continuous',
-    borderLeftWidth: 3,
     backgroundColor: colors.fill,
   },
   text: {
