@@ -39,4 +39,16 @@ For a release build, fully terminate and reopen the app, allow time to download 
 
 Setup created the project, channels, and branches. It did not publish an update or request a cloud build. OTA download and activation need a rebuilt client and a published compatible update before they can be tested.
 
+## PR QR previews
+
+The `.github/workflows/pr-update-preview.yml` workflow is the live-demo path for external TestFlight testers. On every trusted PR update it publishes both platforms to the channel `pr-<number>`, then creates or updates a single PR comment with a QR code for:
+
+```text
+basketball://update?channel=pr-<number>
+```
+
+The `update` route validates that channel, calls `Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': channel })`, checks and fetches a compatible update, and reloads into it. The override persists on the device until another channel is selected or the app is uninstalled. The comment can include the public TestFlight invitation link when the repository variable `TESTFLIGHT_URL` is set.
+
+The app's custom URL scheme opens an installed TestFlight build. It cannot install a binary or make a native change through EAS Update. The TestFlight build must already use the same app version/runtime as the PR update; native dependency, config-plugin, or SDK changes require a new build first. The QR image is rendered by QuickChart from the non-secret custom-scheme link.
+
 See the official [setup guide](https://docs.expo.dev/eas-update/getting-started/), [runtime-version guide](https://docs.expo.dev/eas-update/runtime-versions/), and [SDK 58 updates reference](https://docs.expo.dev/versions/v58.0.0/sdk/updates/).
