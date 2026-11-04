@@ -8,8 +8,10 @@ export const operations = Object.freeze({
   'issue-to-pr': Object.freeze({ label: 'agent', workflow: '.eas/workflows/issue-to-pr.yml' }),
   'bug-triage': Object.freeze({ label: 'agent-triage', workflow: '.eas/workflows/bug-triage.yml' }),
 });
-// EAS preflight decides which demo issue a marker names and rejects unknown ones.
+// A marker names a pinned demo issue, and EAS preflight rejects unknown markers.
+// The agent label also accepts an open issue with no marker. Triage still needs a marker.
 const marker = /<!-- lob-demo:[a-z0-9-]+ -->/;
+const markerRequired = new Set(['bug-triage']);
 const shaPattern = /^[a-f0-9]{40}$/;
 const actorPattern = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
 const trustedAuthors = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
@@ -31,14 +33,15 @@ function issueNumber(value) {
   return /^[1-9][0-9]*$/.test(text) && Number.isSafeInteger(Number(text)) ? Number(text) : null;
 }
 
-function validIssue(issue, number, label) {
+function validIssue(issue, number, label, operation) {
   return issue?.number === number && Number.isSafeInteger(issue.id) && issue.id > 0 &&
     typeof issue.node_id === 'string' && issue.node_id.length > 0 && issue.state === 'open' &&
     !Object.hasOwn(issue, 'pull_request') && trustedAuthors.has(issue.author_association) &&
     issue.html_url === `https://github.com/${repository}/issues/${number}` &&
     issue.repository_url === `https://api.github.com/repos/${repository}` &&
     typeof issue.title === 'string' && issue.title.length > 0 && issue.title.length <= 500 &&
-    typeof issue.body === 'string' && issue.body.length <= 20_000 && marker.test(issue.body) &&
+    typeof issue.body === 'string' && issue.body.trim().length > 0 && issue.body.length <= 20_000 &&
+    (marker.test(issue.body) || !markerRequired.has(operation)) &&
     (!label || (Array.isArray(issue.labels) && issue.labels.some(item => item?.name === label)));
 }
 
@@ -108,7 +111,9 @@ export async function runBridge({
       !writePermissions.has(permission?.permission)) return ignored('Actor lacks repository write permission.');
   }
   const issue = await get(`/issues/${number}`);
-  if (!validIssue(issue, number, label)) return ignored('Issue is not an open trusted demo issue with the requested label.');
+  if (!validIssue(issue, number, label, operation)) {
+    return ignored('Issue is not an open trusted issue with the requested label.');
+  }
   const refPath = `/git/ref/heads/${targetRef.split('/').map(encodeURIComponent).join('/')}`;
   const resolve = async () => {
     const ref = await get(refPath);

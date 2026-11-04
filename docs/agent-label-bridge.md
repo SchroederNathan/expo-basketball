@@ -20,12 +20,12 @@ The workflow requests only `contents: read` and `issues: read`. GitHub documents
 ## Start an issue workflow
 
 1. Use an open issue in `SchroederNathan/expo-basketball` with an author association of `OWNER`, `MEMBER`, or `COLLABORATOR`.
-2. Include exactly one demo marker in its body, such as `<!-- lob-demo:scores-title -->`. The marker names an entry in `.eas/agents/demo-issues.ts` on the target branch. That entry pins the original criteria file, the device checks, the e2e test, and the repair notes. The bridge accepts any well-formed marker. EAS preflight rejects an unknown name, two different names, or criteria bytes that differ from the pinned digest.
+2. Write the issue in plain language. With no marker, the issue is an **open issue**: Issue to PR writes an acceptance test for it, proves the test fails, and then writes the fix. To use a pinned demo issue instead, include exactly one demo marker, such as `<!-- lob-demo:scores-title -->`. The marker names an entry in `.eas/agents/demo-issues.ts` on the target branch. That entry pins the original criteria file, the device checks, the e2e test, and the repair notes. EAS preflight rejects an unknown name, two different names, or criteria bytes that differ from the pinned digest. Bug triage still requires a demo marker.
 3. As a repository writer, maintainer, or administrator, apply `agent` for Issue to PR or `agent-triage` for Bug triage.
 4. Inspect the **Agent issue bridge** Actions log for the operation, workflow path, issue number, target branch, and resolved SHA.
 5. Inspect that source in the original project's EAS workflow history for the cloud result and evidence. Follow the [existing result and recovery instructions](agentic-workflows.md#read-the-result-and-recover).
 
-The controller re-reads the current issue. A stale event cannot admit a closed issue, removed label, missing marker, pull request, different repository, or untrusted author. It also checks the labeling actor's current repository permission. On a rerun, the triggering actor must have write access too.
+The controller re-reads the current issue. A stale event cannot admit a closed issue, removed label, empty body, missing triage marker, pull request, different repository, or untrusted author. It also checks the labeling actor's current repository permission. On a rerun, the triggering actor must have write access too.
 
 The controller resolves only a branch in this repository using GitHub's [Get a reference endpoint](https://docs.github.com/en/rest/git/refs#get-a-reference). It rejects a missing, invalid, ambiguous, non-commit, or moving ref. The same full SHA becomes EAS `--ref` and `candidate_sha`. The other inputs are the fixed `repository`, explicit `target_ref`, and validated `issue_number`.
 
@@ -72,3 +72,17 @@ If dispatch fails or times out, inspect EAS before retrying. The server may have
 The bridge has no Actions concurrency group. Each request only validates inputs and dispatches EAS, so there is no shared local state to serialize. A default Actions concurrency group can replace a pending triage request with a later coding request. See [GitHub's concurrency contract](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).
 
 The EAS workflows own serialization through their global `codex-subscription-agentic-ios` group with `queue: max` and cancellation disabled. Up to 100 runs can wait there. Arrival order can differ from issue event order. This bridge does not create, close, or label issues, create PRs, push commits, merge, or deploy. The selected EAS controller owns any authorized publication after its own validation.
+
+## How an open issue becomes a checked PR
+
+Issue to PR runs these steps for an issue with no demo marker.
+
+1. Preflight freezes the issue title and body as the criteria. An edit to the issue after this point stops later checks.
+2. EAS installs the unfixed release build: fingerprint, then get-build, then repack or build.
+3. A test agent reads the issue and the source. It writes one file, `.agent-tests/issue-<n>.e2e.ts`. The controller checks the file shape: one test, fixed imports, `controller-start`, 1 to 6 named checks, then `controller-end`.
+4. The controller runs that test on the unfixed build on an EAS cloud simulator. The test must fail with exact assertion failures. If it passes or cannot reach a verdict, the test agent gets the runner notes and tries again, up to 3 times. With no failing test, no fix is attempted.
+5. A fix agent changes app source under `src` or `app`. It can read the test but not change it. The controller compares the test bytes before and after.
+6. The controller runs typecheck and unit tests, then commits the test and the fix together. The acceptance receipt records the test path and SHA-256. The PR body says `Fixes #<n>` and lists which checks failed on the unfixed app.
+7. On the PR, E2E iOS runs the frozen test on the PR build and requires a PASS. Agentic CI iOS runs the smoke check.
+
+The generated test lives in a dot folder, so the app typecheck ignores it, and the fix agent's path rule cannot reach it.
