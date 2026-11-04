@@ -31,7 +31,7 @@ Use EAS environment variables for values that must be present during cloud build
 
 ## Compatibility and testing
 
-The current runtime is 1.0.0, derived from the app version. When changing native libraries, config plugins, native settings, or the Expo SDK, bump the Expo app version and create a new native build before publishing for that runtime. Incrementing only the iOS build number or Android version code does not change this runtime policy.
+The current runtime is 1.0.1, derived from the app version. When changing native libraries, config plugins, native settings, or the Expo SDK, bump the Expo app version and create a new native build before publishing for that runtime. Incrementing only the iOS build number or Android version code does not change this runtime policy.
 
 Keep JavaScript and asset updates on the same app version while their native requirements remain compatible. EAS Update cannot add a native module to an already installed binary.
 
@@ -49,6 +49,6 @@ basketball://update?channel=pr-<number>
 
 The `update` route validates that channel, calls `Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': channel })`, checks and fetches a compatible update, and reloads into it. The override persists on the device until another channel is selected or the app is uninstalled. The comment can include the public TestFlight invitation link when the repository variable `TESTFLIGHT_URL` is set.
 
-The app's custom URL scheme opens an installed TestFlight build. It cannot install a binary or make a native change through EAS Update. The TestFlight build must already use the same app version/runtime as the PR update; native dependency, config-plugin, or SDK changes require a new build first. The QR image is rendered by QuickChart from the non-secret custom-scheme link.
+The app's custom URL scheme opens an installed TestFlight build. It cannot install a binary or make a native change through EAS Update. The TestFlight build must already use the same app version/runtime as the PR update and must contain the `/update` route; a pre-feature binary cannot bootstrap this route from a QR scan. Use a one-time bootstrap TestFlight build or update that includes the route, then scan PR QR codes. Native dependency, config-plugin, or SDK changes require a new build first. The QR image is rendered by QuickChart from the non-secret custom-scheme link.
 
 See the official [setup guide](https://docs.expo.dev/eas-update/getting-started/), [runtime-version guide](https://docs.expo.dev/eas-update/runtime-versions/), and [SDK 58 updates reference](https://docs.expo.dev/versions/v58.0.0/sdk/updates/).
