@@ -1,4 +1,4 @@
-import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Platform, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
@@ -19,6 +19,7 @@ import type { PlayerRef } from '@/domain/ids';
 import type { League } from '@/domain/league';
 import { gameHref, parsePlayerParams, teamHref } from '@/navigation/hrefs';
 import { GameCurtain } from '@/screens/game/curtain';
+import { DetailOptions, useDetailParams } from '@/navigation/split';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, radius, space, typography } from '@/theme';
 
@@ -136,7 +137,7 @@ function PlayerHeader({ league, page }: { league: League; page: PlayerPage }) {
 }
 
 export function PlayerScreen() {
-  const ref = parsePlayerParams(useLocalSearchParams());
+  const ref = parsePlayerParams(useDetailParams());
   if (ref === null) return <InvalidLink subject="player" />;
   return <PlayerDetail key={`${ref.league}:${ref.id}`} playerRef={ref} />;
 }
@@ -163,7 +164,7 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
   });
   return (
     <Screen>
-      <Stack.Screen
+      <DetailOptions
         options={{ title: state.kind === 'ready' ? state.data.player.name : 'Player', headerTransparent: true }}
       />
       <GameCurtain

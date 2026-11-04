@@ -1,5 +1,5 @@
 import SegmentedControl from '@expo/ui/community/segmented-control';
-import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useState } from 'react';
 import { Platform, RefreshControl, Share, StyleSheet, View } from 'react-native';
@@ -18,6 +18,7 @@ import { gameTitle, gameWebUrl } from '@/domain/game';
 import type { GameRef } from '@/domain/ids';
 import { playsInPeriod, resolvePeriod, type PeriodChoice } from '@/domain/plays';
 import { parseGameParams } from '@/navigation/hrefs';
+import { DetailOptions, useDetailParams } from '@/navigation/split';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, space } from '@/theme';
 import { BoxScore } from './box-score';
@@ -53,7 +54,7 @@ async function shareGame(game: Game): Promise<void> {
 }
 
 export function GameScreen() {
-  const ref = parseGameParams(useLocalSearchParams());
+  const ref = parseGameParams(useDetailParams());
   if (ref === null) return <InvalidLink subject="game" />;
   return <GameDetail key={`${ref.league}:${ref.id}`} gameRef={ref} />;
 }
@@ -103,7 +104,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
 
   return (
     <Screen>
-      <Stack.Screen
+      <DetailOptions
         options={{
           title: 'Game',
           headerTransparent: true,

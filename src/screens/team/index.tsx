@@ -1,4 +1,4 @@
-import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { useIsFocused } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Platform, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
@@ -17,6 +17,7 @@ import type { TeamRef } from '@/domain/ids';
 import type { League } from '@/domain/league';
 import { gameHref, parseTeamParams, playerHref } from '@/navigation/hrefs';
 import { GameCurtain } from '@/screens/game/curtain';
+import { DetailOptions, useDetailParams } from '@/navigation/split';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, radius, space, typography } from '@/theme';
 
@@ -131,7 +132,7 @@ function TeamHeader({ page }: { page: TeamPage }) {
 }
 
 export function TeamScreen() {
-  const ref = parseTeamParams(useLocalSearchParams());
+  const ref = parseTeamParams(useDetailParams());
   if (ref === null) return <InvalidLink subject="team" />;
   return <TeamDetail key={`${ref.league}:${ref.id}`} teamRef={ref} />;
 }
@@ -152,7 +153,7 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
   });
   return (
     <Screen>
-      <Stack.Screen options={{ title: page?.team.name ?? 'Team', headerTransparent: true }} />
+      <DetailOptions options={{ title: page?.team.name ?? 'Team', headerTransparent: true }} />
       <GameCurtain
         palette={page ? { kind: 'team', color: page.team.accent } : null}
         active={focused}

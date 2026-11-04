@@ -1,5 +1,6 @@
-import { Stack, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
+import { DetailOptions } from '@/navigation/split';
 import { colors } from '@/theme';
 import { Notice } from './notice';
 import { Screen } from './screen';
@@ -14,7 +15,7 @@ export function InvalidLink({ subject }: { subject: 'game' | 'team' | 'player' }
         contentInsetAdjustmentBehavior="automatic"
         style={{ flex: 1, backgroundColor: colors.background }}
       >
-        <Stack.Screen options={{ title: '' }} />
+        <DetailOptions options={{ title: '' }} />
         <Notice
           title="This link is incomplete"
           message={`A ${subject} link needs a supported league and a valid ${subject} id.`}
