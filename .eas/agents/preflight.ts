@@ -103,5 +103,5 @@ export async function preflight({ env, cwd, apiBase = 'https://api.github.com' }
   const issue = task === 'check' ? null : await freezeIssue({ env, cwd, get, expected });
   const criteria = issue ? { path: issue.criteria.path, sha256: issue.criteria.sha256 }
     : { path: '.eas/agents/check-ios.md', sha256: digest(await readFile(join(cwd, '.eas/agents/check-ios.md'))) };
-  return { request, demoFixture, criteria, issue, task };
+  return { request, demoFixture, criteria, issue, task, acceptance: expected ?? null };
 }

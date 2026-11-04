@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { criteriaPaths, demoIssueKey, demoIssues, demoMarker } from './demo-issues';
+import { allCriteriaPaths, demoIssueKey, demoIssues, demoMarker, hasDemoMarker, openCriteriaPath, openCriteriaText } from './demo-issues';
+import { generatedTestPattern } from './generated-test';
 import { digest, digestSchema, issueRefSchema, sourceSchema, type Source } from './result';
 
 export const criteriaPath = demoIssues['player-label'].criteria;
@@ -17,12 +18,15 @@ const issueInputSchema = z.object({
 export const issueSnapshotSchema = z.strictObject({
   identity: issueRefSchema,
   input: issueInputSchema.omit({ pull_request: true }),
-  criteria: z.strictObject({ path: z.enum(criteriaPaths), sha256: digestSchema, text: z.string().min(1) }),
+  criteria: z.strictObject({ path: z.enum(allCriteriaPaths), sha256: digestSchema, text: z.string().min(1) }),
 });
 export type IssueSnapshot = z.infer<typeof issueSnapshotSchema>;
+export const frozenTestSchema = z.strictObject({ path: z.string().regex(generatedTestPattern), sha256: digestSchema });
 export const acceptanceSchema = z.strictObject({
   version: z.literal(1), repository: z.string(), target: sourceSchema,
   issue: issueRefSchema, criteriaSha256: digestSchema,
+  // Only an open issue carries a test. A demo issue uses its pinned registry test.
+  test: frozenTestSchema.optional(),
 });
 export type Acceptance = z.infer<typeof acceptanceSchema>;
 const receiptPrefix = '<!-- lob-agent-acceptance:v1 ';
@@ -39,8 +43,11 @@ export function readAcceptance(body: string): Acceptance | null {
 export function changeBranch(issue: IssueSnapshot, target: Source) {
   return `agent/issue-${issue.identity.number}-${digest(target.ref).slice(0, 12)}`;
 }
-export function acceptanceFor({ issue, target, repository }: { issue: IssueSnapshot; target: Source; repository: string }): Acceptance {
-  return { version: 1, repository, target, issue: issue.identity, criteriaSha256: issue.criteria.sha256 };
+export function acceptanceFor({ issue, target, repository, test }: {
+  issue: IssueSnapshot; target: Source; repository: string; test?: z.infer<typeof frozenTestSchema>;
+}): Acceptance {
+  if ((issue.criteria.path === openCriteriaPath) !== Boolean(test)) throw new Error('Only an open issue carries a generated acceptance test.');
+  return { version: 1, repository, target, issue: issue.identity, criteriaSha256: issue.criteria.sha256, ...(test ? { test } : {}) };
 }
 
 export function issueDigest(input: z.infer<typeof issueInputSchema>) {
@@ -56,15 +63,27 @@ export async function freezeIssue({ env, cwd, get, expected }: {
   const number = z.coerce.number().int().positive().parse(env.AGENT_ISSUE_NUMBER || expected?.issue.number);
   if (expected && expected.issue.number !== number) throw new Error('Issue number differs from the frozen acceptance receipt.');
   const raw = issueInputSchema.parse(await get(`/issues/${number}`));
+  // A marker names a pinned demo issue. An issue with no marker is an open issue.
+  // An unknown marker is still rejected, so a typo never falls back to open mode.
+  const key = demoIssueKey(raw.body);
   if (raw.pull_request !== undefined || raw.number !== number ||
     raw.html_url !== `https://github.com/${env.AGENT_REPOSITORY}/issues/${number}` ||
-    demoIssueKey(raw.body) === null) throw new Error('Unknown demo issue or mismatched issue identity.');
-  const entry = demoIssues[demoIssueKey(raw.body)!];
+    (key === null && hasDemoMarker(raw.body))) throw new Error('Unknown demo issue or mismatched issue identity.');
   const { pull_request: _, ...input } = raw;
   const identity = issueRefSchema.parse({ number, id: raw.id, nodeId: raw.node_id, sha256: issueDigest(input) });
-  const text = await readFile(join(cwd, entry.criteria), 'utf8');
-  const criteria = { path: entry.criteria, text, sha256: digest(text) };
-  if (criteria.sha256 !== entry.criteriaSha256) throw new Error('Issue input or original acceptance criteria changed. Dispatch a newly reviewed input.');
+  let criteria: { path: (typeof allCriteriaPaths)[number]; text: string; sha256: string };
+  if (key) {
+    const entry = demoIssues[key];
+    const text = await readFile(join(cwd, entry.criteria), 'utf8');
+    criteria = { path: entry.criteria, text, sha256: digest(text) };
+    if (criteria.sha256 !== entry.criteriaSha256) throw new Error('Issue input or original acceptance criteria changed. Dispatch a newly reviewed input.');
+  } else {
+    const text = openCriteriaText(raw);
+    criteria = { path: openCriteriaPath, text, sha256: digest(text) };
+  }
+  if (expected && (criteria.path === openCriteriaPath) !== Boolean(expected.test)) {
+    throw new Error('The acceptance receipt and the issue kind disagree.');
+  }
   const wantedIssue = expected?.issue.sha256 ?? env.AGENT_ISSUE_DIGEST;
   const wantedCriteria = expected?.criteriaSha256 ?? env.AGENT_CRITERIA_SHA256;
   if ((wantedIssue && identity.sha256 !== wantedIssue) || (wantedCriteria && criteria.sha256 !== wantedCriteria)) {

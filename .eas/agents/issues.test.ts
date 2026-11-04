@@ -5,13 +5,30 @@ import { mkdir, mkdtemp, readFile, rm, writeFile, copyFile } from 'node:fs/promi
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
-import { executeChange, assertChangedPaths } from './change';
+import { executeChange, assertChangedPaths, type BaseCheck } from './change';
 import { demoIssueMarker, readAcceptance, issueDigest } from './issue';
 import { digest, verdictSchemaFor } from './result';
 
 const issueVerdictSchema = verdictSchemaFor({ path: 'demo/issues/player-label.md' });
 import type { CheckOptions } from './run';
 
+const generatedTest = `import { test } from '@e2e-dev/mobile';
+import { expect } from 'e2e';
+import { runtimeContext, identityLabel } from '../context';
+
+const identity = identityLabel(runtimeContext().target);
+
+test('Issue #7 acceptance', async ({ app, screen }) => {
+  await app.open();
+  await expect(screen.getByLabel(identity, { exact: true })).toBeVisible();
+  await app.screenshot('controller-start');
+  try { await expect.soft(screen.getByText('PTS', { exact: true })).toBeVisible(); }
+  finally { await app.screenshot('points-label'); }
+  await expect(screen.getByLabel(identity, { exact: true })).toBeVisible();
+  await app.screenshot('controller-end');
+});
+`;
+const failing: BaseCheck = async () => ({ state: 'FAIL', reason: null, checks: [{ id: 'points-label', state: 'FAIL' }], notes: [] });
 const git = (cwd: string, args: string[]) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 async function setup(kind: string, inspect: (context: {
   options: CheckOptions & { remote: string }; cwd: string; root: string;
@@ -20,7 +37,7 @@ async function setup(kind: string, inspect: (context: {
   const root = await mkdtemp(join(tmpdir(), 'lob-change-test-'));
   const cwd = join(root, 'repo');
   for (const path of ['src', 'demo/fixtures', 'demo/issues', '.eas/agents']) await mkdir(join(cwd, path), { recursive: true });
-  for (const path of ['demo/fixtures/prizepicks-v1.json', 'demo/issues/player-label.md', '.eas/agents/check-ios.md', '.eas/agents/change.md']) {
+  for (const path of ['demo/fixtures/prizepicks-v1.json', 'demo/issues/player-label.md', '.eas/agents/check-ios.md', '.eas/agents/change.md', '.eas/agents/write-test.md']) {
     await copyFile(resolve(path), join(cwd, path));
   }
   const tsc = resolve('node_modules/typescript/lib/tsc.js');
@@ -48,12 +65,21 @@ import { readFileSync, writeFileSync, mkdirSync, appendFileSync, copyFileSync, s
 import { join } from 'node:path';
 const c = ${JSON.stringify({ root, kind })};
 const [tool,...args]=process.argv.slice(2);
+const generated=${JSON.stringify(generatedTest)};
 if(tool==='eas') {
   if(args[0]!=='env:update') process.exit(4);
   const path=args[args.indexOf('--value')+1];
   if(c.kind==='auth-writeback-failed' && readFileSync(path,'utf8').includes('refreshed')) process.exit(3);
   copyFileSync(path,join(c.root,'persisted.json'));
 } else if(tool==='codex') {
+  const input=readFileSync(0,'utf8');
+  if(c.kind.startsWith('open') && input.includes('Write the acceptance test for an open Lob issue')) {
+    appendFileSync(join(c.root,'tests.log'),'test\\n');
+    mkdirSync('.agent-tests',{recursive:true});writeFileSync('.agent-tests/issue-7.e2e.ts',generated);
+    writeFileSync(args[args.indexOf('--output-last-message')+1],JSON.stringify({state:'READY',summary:'Checks the points label.',checks:[{id:'points-label',expectation:'PTS is shown'}]}));
+    process.exit(0);
+  }
+  if(c.kind==='open-edits-test') writeFileSync('.agent-tests/issue-7.e2e.ts',generated.replace('PTS','REB'));
   appendFileSync(join(c.root,'agents.log'),'agent\\n');
   for(const key of ['AGENT_GITHUB_WRITE_TOKEN','AGENT_GITHUB_READ_TOKEN','EXPO_TOKEN','OPENAI_API_KEY','CODEX_AUTH_JSON']) if(process.env[key]) process.exit(5);
   const auth=join(process.env.CODEX_HOME,'auth.json');
@@ -75,8 +101,8 @@ if(tool==='eas') {
 `);
   const mutations: string[] = [];
   const counts = { agents: 0, prs: 0 };
-  let issueBody = `${demoIssueMarker}\nJordan's points label is missing. Use the original repository criteria.`;
-  let failPR = kind === 'retry';
+  let issueBody = kind.startsWith('open') ? 'The points label should read PTS.' : `${demoIssueMarker}\nJordan's points label is missing. Use the original repository criteria.`;
+  let failPR = kind === 'retry' || kind === 'open-retry';
   let failAfterPR = kind === 'retry-after-pr';
   let targetMoved = false;
   const moveTarget = () => {
@@ -133,7 +159,8 @@ if(tool==='eas') {
     env: { PATH: process.env.PATH, HOME: root, EXPO_TOKEN: 'synthetic-expo', CODEX_AUTH_JSON: seed, AGENT_AUTH_WRITE_TOKEN: 'synthetic-write-token',
       AGENT_TRUSTED_AUTOMATION: 'enabled', AGENT_TRUSTED_REPOSITORY: 'trusted/lob-demo', AGENT_REPOSITORY: 'trusted/lob-demo',
       AGENT_WORKFLOW_BASELINE_SHA: sha, AGENT_SOURCE_SHA: sha, AGENT_SOURCE_REF: 'release/prizepicks-demo', AGENT_ISSUE_NUMBER: '7',
-      AGENT_GITHUB_WRITE_TOKEN: 'synthetic-github-write', AGENT_GITHUB_READ_TOKEN: 'synthetic-read' },
+      AGENT_GITHUB_WRITE_TOKEN: 'synthetic-github-write', AGENT_GITHUB_READ_TOKEN: 'synthetic-read',
+      AGENT_BUILD_ID: '11111111-1111-4111-8111-111111111111', AGENT_FINGERPRINT: 'f'.repeat(40) },
     githubApiBase: `http://127.0.0.1:${address.port}`,
     executables: { eas: { file: process.execPath, args: [fake, 'eas'] }, codex: { file: process.execPath, args: [fake, 'codex'] },
       device: { file: 'false', args: [] }, ffmpeg: { file: 'false', args: [] }, ffprobe: { file: 'false', args: [] } },
@@ -274,4 +301,55 @@ test('issue content digest ignores comment timestamps and changes when the repor
     updated_at: '2026-10-28T00:00:00Z', html_url: 'https://github.com/trusted/lob-demo/issues/7', author_association: 'OWNER' } satisfies Parameters<typeof issueDigest>[0];
   assert.equal(issueDigest(issue), issueDigest({ ...issue, updated_at: '2026-10-29T00:00:00Z' }));
   assert.notEqual(issueDigest(issue), issueDigest({ ...issue, body: `${demoIssueMarker} edited` }));
+});
+
+test('an open issue gets a generated test that fails first, then a fix that cannot edit it', { timeout: 20_000 }, async () => {
+  await setup('open-success', async ({ options, root, cwd, counts }) => {
+    const calls: Parameters<BaseCheck>[0][] = [];
+    const result = await executeChange({ ...options, baseCheck: async (input) => { calls.push(input); return failing(input); } });
+    assert.equal(result.state, 'PR_READY', 'reason' in result ? result.reason : '');
+    if (result.state !== 'PR_READY') return;
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.target.kind === 'acceptance' && calls[0].target.test?.checks.join(), 'points-label');
+    assert.equal(calls[0]?.target.source.sha, git(cwd, ['rev-parse', 'HEAD']));
+    const files = git(options.remote, ['diff', '--name-only', `${result.candidate}^`, result.candidate]).split('\n').sort();
+    assert.deepEqual(files, ['.agent-tests/issue-7.e2e.ts', 'src/label.test.ts', 'src/label.ts']);
+    const receipt = readAcceptance(git(options.remote, ['show', '-s', '--format=%B', result.candidate]));
+    assert.equal(receipt?.test?.path, '.agent-tests/issue-7.e2e.ts');
+    assert.equal(receipt?.test?.sha256, digest(generatedTest));
+    assert.equal(git(options.remote, ['show', '-s', '--format=%s', result.candidate]), 'Fix #7: Jordan label');
+    assert.equal(counts.prs, 1);
+    assert.equal((await readFile(join(root, 'tests.log'), 'utf8')).trim().split('\n').length, 1);
+  });
+});
+
+test('an open issue whose test passes on the unfixed app never reaches the fix agent', { timeout: 20_000 }, async () => {
+  await setup('open-passes', async ({ options, root, mutations }) => {
+    let calls = 0;
+    const result = await executeChange({ ...options, baseCheck: async () => { calls++; return { state: 'PASS', reason: null, checks: [{ id: 'points-label', state: 'PASS' }], notes: [] }; } });
+    assert.equal(result.state, 'INCONCLUSIVE');
+    assert.equal(calls, 3);
+    assert.deepEqual(mutations, []);
+    assert.equal((await readFile(join(root, 'tests.log'), 'utf8')).trim().split('\n').length, 3);
+    await assert.rejects(readFile(join(root, 'agents.log'), 'utf8'));
+  });
+});
+
+test('the fix agent cannot change the frozen generated test', { timeout: 20_000 }, async () => {
+  await setup('open-edits-test', async ({ options, mutations }) => {
+    const result = await executeChange({ ...options, baseCheck: failing });
+    assert.equal(result.state, 'REJECTED', 'reason' in result ? result.reason : '');
+    assert.deepEqual(mutations, []);
+  });
+});
+
+test('an open issue retry rebuilds its receipt from the pushed test and reuses the branch', { timeout: 20_000 }, async () => {
+  await setup('open-retry', async ({ options, root, counts }) => {
+    const first = await executeChange({ ...options, baseCheck: failing });
+    assert.equal(first.state, 'INCONCLUSIVE');
+    const second = await executeChange({ ...options, baseCheck: async () => assert.fail('A retry must not rerun the test agent.') });
+    assert.equal(second.state, 'PR_READY', 'reason' in second ? second.reason : '');
+    assert.equal(counts.prs, 1);
+    assert.equal((await readFile(join(root, 'tests.log'), 'utf8')).trim().split('\n').length, 1);
+  });
 });

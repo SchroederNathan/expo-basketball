@@ -1,14 +1,22 @@
 import { z } from 'zod';
-import { demoIssueByCriteria, demoIssueKeys, demoIssues } from '../demo-issues';
+import { demoIssueByCriteria, isOpenCriteria } from '../demo-issues';
+import { generatedRunnerFile } from '../generated-test';
 import { plain } from '../evidence';
-import { fileSchema, targetSchema } from '../result';
+import { fileSchema, targetSchema, type Target } from '../result';
 import { cleanupSchema, ledgerSchema } from './provider';
 
-// The e2e checks for one demo issue, in the order its test captures them.
-export function e2eFor(criteria: { path: string }) { return demoIssueByCriteria(criteria.path).e2e; }
-const allCheckIds = [...new Set(demoIssueKeys.flatMap((key) => demoIssues[key].e2e.checks))] as [string, ...string[]];
+// The e2e checks for one issue, in the order its test captures them. A demo issue
+// names its pinned test. An open issue carries its frozen generated test on the target.
+export function e2eFor(target: Target): { file: string; title: string; checks: readonly string[] } {
+  if (target.kind === 'check') throw new Error('e2e requires an issue acceptance target.');
+  if (isOpenCriteria(target.criteria.path)) {
+    if (!target.test) throw new Error('An open issue target needs its frozen generated test.');
+    return { file: generatedRunnerFile(target.issue.number), title: target.test.title, checks: target.test.checks };
+  }
+  return demoIssueByCriteria(target.criteria.path).e2e;
+}
 export const originalFixtureSha256 = '48f38c3caedfd62905a07161ec5e49df622357db6fcf3cd01555e3c8a05b75aa';
-export const checkSchema = z.strictObject({ id: z.enum(allCheckIds), state: z.enum(['PASS', 'FAIL']),
+export const checkSchema = z.strictObject({ id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/), state: z.enum(['PASS', 'FAIL']),
   detail: z.string().min(1).max(2000), screenshot: z.string(), assertionIds: z.array(z.string().min(1)).min(1),
 });
 export const frameworkSchema = z.strictObject({ runId: z.string().min(1), testId: z.string().min(1),
@@ -50,9 +58,14 @@ export const testerArmyResultSchema = z.discriminatedUnion('state', [
     ctx.addIssue({ code: 'custom', message: 'Definitive e2e verdict requires frozen original issue acceptance.' });
     return;
   }
-  const issue = demoIssueByCriteria(value.target.criteria.path);
-  const checkIds: readonly string[] = issue.e2e.checks;
-  if (value.target.criteria.sha256 !== issue.criteriaSha256 || value.target.fixture.sha256 !== originalFixtureSha256 ||
+  let checkIds: readonly string[] = [];
+  let pinned = true;
+  try {
+    checkIds = e2eFor(value.target).checks;
+    // An open issue has no registry pin. Its receipt and the controller bind the generated test bytes.
+    pinned = isOpenCriteria(value.target.criteria.path) || value.target.criteria.sha256 === demoIssueByCriteria(value.target.criteria.path).criteriaSha256;
+  } catch { pinned = false; }
+  if (!pinned || !checkIds.length || value.target.fixture.sha256 !== originalFixtureSha256 ||
     value.lease.state !== 'ready' || value.cleanup.state !== 'stopped' ||
     value.cleanup.sessionId !== value.lease.sessionId || value.lease.attemptId !== value.attemptId || value.lease.runId !== value.framework.runId ||
     value.auth !== 'persisted' || value.termination.kind !== 'observed' || value.termination.exitCode !== expected ||

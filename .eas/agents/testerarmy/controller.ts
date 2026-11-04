@@ -5,7 +5,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { z } from 'zod';
 import { preflight } from '../preflight';
-import { demoIssueByCriteria } from '../demo-issues';
+import { demoIssueByCriteria, isOpenCriteria } from '../demo-issues';
+import { generatedTestPath, parseGeneratedTest } from '../generated-test';
 import { stopReport } from '../stop-report';
 import { command, safeEnvironment, succeeded, type Command } from '../process';
 import { buildIdSchema, digest, publishFile, sanitize, shaSchema, targetSchema, type Target } from '../result';
@@ -17,13 +18,15 @@ import { contextSchema } from './context';
 import { publishTesterArmyEvidence } from './evidence';
 import { projectId, readLedger, reconcileOwned, sessionControl, type Cleanup, type Ledger } from './provider';
 import { admitEvidence, admitReport, diagnoseReport, verifyReplay } from './report';
-import { diagnosticSchema, publicationStatus, testerArmyResultSchema, toolVersions, type TesterArmyResultV1 } from './result';
+import { diagnosticSchema, e2eFor, publicationStatus, testerArmyResultSchema, toolVersions, type TesterArmyResultV1 } from './result';
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url));
 const eas: Command = { file: 'bunx', args: ['eas-cli@25.3.0'] };
 const node: Command = { file: 'node', args: [] };
 type Options = { cwd: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal;
-  cache?: z.infer<typeof contextSchema>['cache']; refreshedFile?: string };
+  cache?: z.infer<typeof contextSchema>['cache']; refreshedFile?: string;
+  // A fail-first base run supplies its own target and generated test instead of a PR preflight.
+  fixed?: { target: Target; testSource: string } };
 
 export async function verifyRuntimePins() {
   for (const [name, version] of Object.entries({ e2e: toolVersions.e2e, '@e2e-dev/mobile': toolVersions.mobile,
@@ -64,14 +67,14 @@ export function admitWorkerReport(run: Awaited<ReturnType<typeof runWorker>>, re
   return admitReport(report, ledger, target, run.observation.exitCode ?? -1);
 }
 
-async function runtime(directory: string, context: z.infer<typeof contextSchema>) {
+async function runtime(directory: string, context: z.infer<typeof contextSchema>, testSource: string) {
   await mkdir(join(directory, 'tests'), { recursive: true, mode: 0o700 });
   await writeFile(join(directory, 'package.json'), '{"name":"lob-testerarmy-attempt","private":true,"type":"module"}', { mode: 0o600 });
   await symlink(join(packageDirectory, 'node_modules'), join(directory, 'node_modules'), 'dir');
   for (const name of ['context', 'e2e.config']) {
     await writeFile(join(directory, `${name}.ts`), `export ${name === 'context' ? '*' : '{ default }'} from ${JSON.stringify(join(packageDirectory, `${name}.ts`))};\n`, { mode: 0o600 });
   }
-  await copyFile(join(packageDirectory, context.test), join(directory, context.test));
+  await writeFile(join(directory, context.test), testSource, { flag: 'wx', mode: 0o600 });
   const file = join(directory, 'context.json');
   await writeFile(file, JSON.stringify(contextSchema.parse(context)), { flag: 'wx', mode: 0o600 });
   return file;
@@ -104,21 +107,43 @@ export async function executeTesterArmy(options: Options) {
   const secrets = Object.entries(options.env).filter(([key]) => /TOKEN|SECRET|KEY|AUTH/.test(key)).flatMap(([, value]) => value ? [value] : []);
   const controllerEnv = { ...safeEnvironment(options.env), EXPO_TOKEN: options.env.EXPO_TOKEN, CI: '1', EAS_NO_VCS: '1' };
   try {
-    const prepared = await preflight({ cwd: options.cwd, env: options.env });
-    if (prepared.task !== 'acceptance' || !prepared.issue) throw new Error('TesterArmy requires the frozen original acceptance issue.');
+    const prepared = options.fixed ? null : await preflight({ cwd: options.cwd, env: options.env });
+    if (prepared && (prepared.task !== 'acceptance' || !prepared.issue)) throw new Error('TesterArmy requires the frozen original acceptance issue.');
     const subscription = subscriptionConfig(options.env);
     oauthSchema.parse(JSON.parse(await readFile(subscription.file, 'utf8')));
     if (!options.env.EXPO_TOKEN) throw new Error('The built-in Developer EXPO_TOKEN is required.');
     await verifyRuntimePins();
     options.signal.throwIfAborted();
-    const installed = buildIdSchema.parse(options.env.AGENT_BUILD_ID);
-    target = targetSchema.parse({ kind: 'acceptance', issue: prepared.issue.identity,
-      controller: prepared.request.source, source: prepared.request.source, repository: prepared.request.repository, pullRequest: prepared.request.pullRequest,
-      platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview', fingerprint: options.env.AGENT_FINGERPRINT,
-      runtime: '1.0.0', fixture: prepared.demoFixture, criteria: prepared.criteria, bundle: { kind: 'embedded', candidate: prepared.request.source.sha },
-      native: options.env.AGENT_NATIVE_SOURCE_BUILD_ID ? { kind: 'repacked', installed, source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID),
-        sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA) } : { kind: 'built', installed, sourceSha: prepared.request.source.sha },
-    });
+    let testSource: string;
+    if (options.fixed) {
+      target = targetSchema.parse(options.fixed.target);
+      testSource = options.fixed.testSource;
+    } else {
+      const ready = prepared!;
+      const issue = ready.issue!;
+      const installed = buildIdSchema.parse(options.env.AGENT_BUILD_ID);
+      // An open issue runs the generated test frozen in its receipt. A demo issue runs its pinned test.
+      let test: { path: string; sha256: string; title: string; checks: string[] } | undefined;
+      if (isOpenCriteria(issue.criteria.path)) {
+        const frozen = ready.acceptance?.test;
+        if (!frozen || frozen.path !== generatedTestPath(issue.identity.number)) throw new Error('The open issue receipt lacks its generated acceptance test.');
+        testSource = await readFile(join(options.cwd, frozen.path), 'utf8');
+        if (digest(testSource) !== frozen.sha256) throw new Error('The generated acceptance test changed after it was frozen.');
+        const spec = parseGeneratedTest(testSource, issue.identity.number);
+        test = { path: frozen.path, sha256: frozen.sha256, title: spec.title, checks: [...spec.checks] };
+      } else testSource = await readFile(join(packageDirectory, demoIssueByCriteria(issue.criteria.path).e2e.file), 'utf8');
+      target = targetSchema.parse({ kind: 'acceptance', issue: issue.identity,
+        controller: ready.request.source, source: ready.request.source, repository: ready.request.repository, pullRequest: ready.request.pullRequest,
+        platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview', fingerprint: options.env.AGENT_FINGERPRINT,
+        runtime: '1.0.0', fixture: ready.demoFixture, criteria: ready.criteria, bundle: { kind: 'embedded', candidate: ready.request.source.sha },
+        native: options.env.AGENT_NATIVE_SOURCE_BUILD_ID ? { kind: 'repacked', installed, source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID),
+          sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA) } : { kind: 'built', installed, sourceSha: ready.request.source.sha },
+        ...(test ? { test } : {}) });
+    }
+    if (target.kind === 'check') throw new Error('TesterArmy requires an issue acceptance target.');
+    if (target.test && (digest(testSource) !== target.test.sha256 || parseGeneratedTest(testSource, target.issue.number).checks.join() !== target.test.checks.join())) {
+      throw new Error('The generated acceptance test bytes disagree with the frozen target.');
+    }
     await verifyBuild({ target, eas, cwd: options.cwd, env: controllerEnv, projectId });
     const version = await command({ executable: node, args: ['--version'], cwd: options.cwd, env: safeEnvironment(options.env), timeoutMs: 10_000 });
     if (!succeeded(version) || version.stdout.trim() !== 'v22.23.1') throw new Error('Node 22.23.1 is required before starting e2e.');
@@ -132,7 +157,7 @@ export async function executeTesterArmy(options: Options) {
     await persistSubscription({ file: authFile, eas, cwd: options.cwd, env: options.env });
     auth = 'persisted';
     const abortFile = join(privateDirectory, 'abort');
-    const contextFile = await runtime(task, { attemptId, target, test: demoIssueByCriteria(target.criteria.path).e2e.file, ledgerFile, abortFile, cache: options.cache ?? 'off' });
+    const contextFile = await runtime(task, { attemptId, target, test: e2eFor(target).file, ledgerFile, abortFile, cache: options.cache ?? 'off' }, testSource);
     execution = 'unfinished';
     const run = await runWorker({ cwd: task, env: { ...runnerEnvironment(options.env, privateDirectory, xdg), TESTERARMY_CONTEXT: contextFile },
       abortFile, signal: options.signal });
@@ -184,7 +209,7 @@ export async function executeTesterArmy(options: Options) {
   try { delivery = await publishTesterArmyEvidence({ result, root, directory: join(staged, 'media'), cwd: options.cwd, env: options.env, writer, phase: evidencePhase() }); }
   finally { await rm(staged, { recursive: true, force: true }); }
   await publishFile({ directory: root, name: 'publication-receipt.json', bytes: JSON.stringify(delivery, null, 2) });
-  return { result, status: publicationStatus(result, delivery), report: admission?.report ?? null };
+  return { result, status: publicationStatus(result, delivery), report: admission?.report ?? null, rawReport: rawReport ?? null };
 }
 
 export async function executeReplayProof(options: Options) {

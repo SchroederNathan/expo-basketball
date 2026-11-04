@@ -18,7 +18,7 @@ name: Issue to PR
       issue_number:
         type: string
         required: true
-        description: Trusted synthetic issue with the player-label marker
+        description: Trusted issue, a pinned demo issue with a marker or an open issue without one
 
 permissions:
   account:
@@ -32,6 +32,7 @@ concurrency:
 defaults:
   tools:
     bun: 1.2.22
+    node: 22.23.1
 
 jobs:
   preflight:
@@ -46,6 +47,7 @@ jobs:
     outputs:
       issue_digest: ${{ steps.freeze.outputs.issue_digest }}
       criteria_sha256: ${{ steps.freeze.outputs.criteria_sha256 }}
+      issue_kind: ${{ steps.freeze.outputs.issue_kind }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
@@ -54,10 +56,52 @@ jobs:
           bun .eas/agents/run.ts preflight
           set-output issue_digest "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/preflight.json", "utf8")).issueDigest')"
           set-output criteria_sha256 "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/preflight.json", "utf8")).criteriaSha256')"
+          set-output issue_kind "$(node -p 'JSON.parse(require("fs").readFileSync("agent-output/preflight.json", "utf8")).issueKind')"
+
+  # An open issue needs the unfixed app installed, so its generated test can fail first.
+  fingerprint:
+    type: fingerprint
+    needs: [preflight]
+    if: ${{ needs.preflight.outputs.issue_kind == 'open' }}
+    environment: preview
+    env:
+      EXPO_PUBLIC_AGENT_DEMO: prizepicks-v1
+
+  get_build:
+    type: get-build
+    needs: [fingerprint]
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+      simulator: true
+      fingerprint_hash: ${{ needs.fingerprint.outputs.ios_fingerprint_hash }}
+      wait_for_in_progress: true
+
+  build:
+    type: build
+    needs: [get_build]
+    if: ${{ !needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      platform: ios
+      profile: agent-preview
+
+  repack:
+    type: repack
+    needs: [get_build]
+    if: ${{ needs.get_build.outputs.build_id }}
+    environment: preview
+    params:
+      build_id: ${{ needs.get_build.outputs.build_id }}
+      profile: agent-preview
+      embed_bundle_assets: true
+      js_bundle_only: false
 
   change:
     name: Repair, validate, and publish through the controller
     needs: [preflight]
+    after: [fingerprint, get_build, build, repack]
     environment: preview
     env:
       AGENT_REPOSITORY: ${{ inputs.repository }}
@@ -67,13 +111,27 @@ jobs:
       AGENT_ISSUE_NUMBER: ${{ inputs.issue_number }}
       AGENT_ISSUE_DIGEST: ${{ needs.preflight.outputs.issue_digest }}
       AGENT_CRITERIA_SHA256: ${{ needs.preflight.outputs.criteria_sha256 }}
+      AGENT_ISSUE_KIND: ${{ needs.preflight.outputs.issue_kind }}
       AGENT_RUN_ID: ${{ workflow.id }}
       AGENT_RUN_URL: ${{ workflow.url }}
+      AGENT_BUILD_ID: ${{ after.build.outputs.build_id || after.repack.outputs.build_id || '' }}
+      AGENT_NATIVE_SOURCE_BUILD_ID: ${{ after.get_build.outputs.build_id || '' }}
+      AGENT_NATIVE_SOURCE_SHA: ${{ after.get_build.outputs.git_commit_hash || '' }}
+      AGENT_FINGERPRINT: ${{ after.fingerprint.outputs.ios_fingerprint_hash || '' }}
     outputs:
       state: ${{ steps.change.outputs.state }}
     steps:
       - uses: eas/checkout
       - uses: eas/install_node_modules
+      - name: Install the e2e tools for an open issue
+        run: |
+          if [ "$AGENT_ISSUE_KIND" = open ]; then
+            bun install --cwd .eas/agents/testerarmy --frozen-lockfile --ignore-scripts
+            if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
+              sudo apt-get update
+              sudo apt-get install -y ffmpeg
+            fi
+          fi
       - id: change
         run: |
           rm -f agent-output/status.json

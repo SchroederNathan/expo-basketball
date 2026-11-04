@@ -11,7 +11,7 @@ import { digest, publishFile, sanitize, type Target } from '../result';
 import { identityLabel } from '../simulator';
 import { probeMedia } from '../evidence-media';
 import { evidencePhase, type EvidencePhase } from '../evidence-phase';
-import { demoIssueByCriteria } from '../demo-issues';
+import { demoIssueByCriteria, isOpenCriteria } from '../demo-issues';
 import { checkSchema, e2eFor, failureKinds, frameworkSchema, originalFixtureSha256 } from './result';
 import { type Ledger } from './provider';
 
@@ -58,7 +58,7 @@ type Artifact = Attempt['artifacts'][number];
 
 export function admitReport(input: unknown, ledger: Ledger, target: Target, actualExit: number) {
   const report = parseReport(input);
-  const e2e = e2eFor(target.criteria);
+  const e2e = e2eFor(target);
   const checkIds: readonly string[] = e2e.checks;
   const run = report.run;
   const result = run.results[0];
@@ -141,13 +141,27 @@ export async function artifactBytes(root: string, artifact: Artifact, startedMs:
   } finally { await handle.close(); }
 }
 
+// The fixture and the criteria must be the frozen bytes. A demo issue pins its criteria
+// file in the registry. An open issue binds its generated test by the receipt SHA-256,
+// and that file is in the checkout only for a PR candidate.
+export async function assertFrozenInputs(cwd: string, target: Target, testInCheckout: boolean) {
+  if (digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'))) !== target.fixture.sha256 ||
+    target.fixture.sha256 !== originalFixtureSha256 || target.kind === 'check') throw new Error('Original criteria or fixture bytes changed.');
+  if (isOpenCriteria(target.criteria.path)) {
+    if (!target.test || (testInCheckout && digest(await readFile(join(cwd, target.test.path))) !== target.test.sha256)) {
+      throw new Error('The generated acceptance test changed after it was frozen.');
+    }
+    return;
+  }
+  if (digest(await readFile(join(cwd, target.criteria.path))) !== target.criteria.sha256 ||
+    target.criteria.sha256 !== demoIssueByCriteria(target.criteria.path).criteriaSha256) throw new Error('Original criteria or fixture bytes changed.');
+}
+
 export async function admitEvidence({ admission, root, directory, target, ledger, cwd, env, secrets = [], phase = evidencePhase() }: {
   admission: ReturnType<typeof admitReport>; root: string; directory: string; target: Target; ledger: Ledger; cwd: string;
   env: NodeJS.ProcessEnv; secrets?: readonly string[]; phase?: EvidencePhase;
 }) {
-  if (digest(await readFile(join(cwd, target.criteria.path))) !== target.criteria.sha256 ||
-    digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'))) !== target.fixture.sha256 ||
-    target.criteria.sha256 !== demoIssueByCriteria(target.criteria.path).criteriaSha256 || target.fixture.sha256 !== originalFixtureSha256) throw new Error('Original criteria or fixture bytes changed.');
+  await assertFrozenInputs(cwd, target, Boolean(target.pullRequest));
   const staging = await mkdtemp(join(tmpdir(), 'lob-testerarmy-admission-'));
   let promoting = false;
   try {

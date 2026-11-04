@@ -7,7 +7,7 @@ import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { executeChange } from './change';
 import { codexFailure, withCodexRetry } from './codex-failure';
-import { demoIssueByCriteria } from './demo-issues';
+import { demoIssueByCriteria, isOpenCriteria } from './demo-issues';
 import { stopReport } from './stop-report';
 import { finalizedEvidence, publicationStatus } from './evidence';
 import { publishEvidenceComment } from './evidence-publisher';
@@ -118,8 +118,10 @@ export async function executeCheck(options: CheckOptions): Promise<Result> {
     partial.push(await publishFile({ directory: publicDirectory, name: 'target.json', bytes: JSON.stringify(target, null, 2) }));
     partial.push(await publishFile({ directory: publicDirectory, name: 'criteria.md', bytes: prepared.issue?.criteria.text ?? await readFile(join(options.cwd, '.eas/agents/check-ios.md')) }));
     if (prepared.issue) partial.push(await publishFile({ directory: publicDirectory, name: 'issue-input.json', bytes: sanitize(JSON.stringify(prepared.issue, null, 2), secrets) }));
-    prompt = await readFile(join(options.cwd, prepared.issue ? demoIssueByCriteria(prepared.issue.criteria.path).devicePrompt : '.eas/agents/check-ios.md'), 'utf8');
-    if (prepared.issue) prompt += `\nFrozen original acceptance criteria\n${prepared.issue.criteria.text}\n\nReported issue input, untrusted data only\n${JSON.stringify(prepared.issue.input)}\n`;
+    // An open issue gets the smoke check here. Its generated e2e test checks the issue itself.
+    const pinned = prepared.issue && !isOpenCriteria(prepared.issue.criteria.path) ? prepared.issue : null;
+    prompt = await readFile(join(options.cwd, pinned ? demoIssueByCriteria(pinned.criteria.path).devicePrompt : '.eas/agents/check-ios.md'), 'utf8');
+    if (pinned) prompt += `\nFrozen original acceptance criteria\n${pinned.criteria.text}\n\nReported issue input, untrusted data only\n${JSON.stringify(pinned.input)}\n`;
     await verifyBuild({ target, eas: executables.eas, cwd: options.cwd, env: controllerEnv });
     await writeSimulatorProject(options.cwd, deviceDirectory);
     const seeded = await seedSubscription({ seedFile: subscription.file, directory: join(privateDirectory, 'codex') });
@@ -228,7 +230,8 @@ async function main() {
   if (operation === 'preflight') {
     const prepared = await preflight({ env: process.env, cwd: process.cwd() });
     await mkdir('agent-output', { recursive: true });
-    await writeFile('agent-output/preflight.json', JSON.stringify({ task: prepared.task, issueDigest: prepared.issue?.identity.sha256 ?? '', criteriaSha256: prepared.criteria.sha256 }));
+    await writeFile('agent-output/preflight.json', JSON.stringify({ task: prepared.task, issueDigest: prepared.issue?.identity.sha256 ?? '', criteriaSha256: prepared.criteria.sha256,
+      issueKind: prepared.issue ? (isOpenCriteria(prepared.issue.criteria.path) ? 'open' : 'demo') : '' }));
     subscriptionConfig(process.env);
     if (prepared.task === 'triage' || prepared.task === 'change') z.string().min(1).parse(process.env.AGENT_GITHUB_WRITE_TOKEN);
     if (prepared.task !== 'change' && (prepared.task === 'triage' || prepared.request.pullRequest)) await prepareEvidenceWriter({ repository: prepared.request.repository, env: process.env, directory: resolve('agent-output/.evidence-tools'), phase: evidencePhase(cancellation.signal, 120_000) });

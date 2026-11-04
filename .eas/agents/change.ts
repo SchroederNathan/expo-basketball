@@ -5,16 +5,45 @@ import { dirname, join } from 'node:path';
 import { z } from 'zod';
 import { persistSubscription, seedSubscription, subscriptionConfig, validateSubscription } from './auth';
 import { codexFailure, withCodexRetry } from './codex-failure';
-import { demoIssueByCriteria } from './demo-issues';
+import { demoIssueByCriteria, isOpenCriteria } from './demo-issues';
+import { generatedTestPath, parseGeneratedTest } from './generated-test';
 import { GitHub, PublicationConflict } from './github';
-import { acceptanceFor, acceptanceMarker, changeBranch, type IssueSnapshot } from './issue';
+import { acceptanceFor, acceptanceMarker, changeBranch, type Acceptance, type IssueSnapshot } from './issue';
 import { preflight } from './preflight';
 import { command, safeEnvironment, succeeded, type Command } from './process';
-import { digest, issueRefSchema, publishFile, sanitize, shaSchema, sourceSchema, terminationSchema, type Source, type Termination } from './result';
+import { buildIdSchema, digest, issueRefSchema, publishFile, sanitize, shaSchema, sourceSchema, targetSchema, terminationSchema, type Source, type Target, type Termination } from './result';
 import type { CheckOptions } from './run';
 import { readJson } from './simulator';
 
 const codingVerdictSchema = z.strictObject({ state: z.enum(['READY', 'NO_CHANGE', 'INCONCLUSIVE']), summary: z.string().min(1).max(3000) });
+const testVerdictSchema = z.strictObject({ state: z.enum(['READY', 'INCONCLUSIVE']), summary: z.string().min(1).max(2000),
+  checks: z.array(z.strictObject({ id: z.string().regex(/^[a-z][a-z0-9-]{1,39}$/), expectation: z.string().min(1).max(400) })).max(6) });
+// The test agent gets this many tries to write a test that fails on the unfixed app.
+export const testAttempts = 3;
+export type BaseCheck = (input: { target: Target; testSource: string; outputRoot: string; env: NodeJS.ProcessEnv; signal: AbortSignal; cwd: string }) =>
+  Promise<{ state: string; reason: string | null; checks: { id: string; state: string }[]; notes: string[] }>;
+
+// Runs the generated test on the unfixed installed build with the e2e controller.
+export const baseCheck: BaseCheck = async ({ target, testSource, outputRoot, env, signal, cwd }) => {
+  const { executeTesterArmy } = await import('./testerarmy/controller');
+  const { result, rawReport } = await executeTesterArmy({ cwd, outputRoot, env, signal, fixed: { target, testSource } });
+  return { state: result.state, reason: result.state === 'INCONCLUSIVE' ? result.reason : null,
+    checks: result.checks.map((check) => ({ id: check.id, state: check.state })), notes: reportNotes(rawReport) };
+};
+
+// Failed steps and agent explanations from a framework report, for the test agent's next try.
+export function reportNotes(report: unknown): string[] {
+  const parsed = z.object({ run: z.object({ results: z.array(z.object({ attempts: z.array(z.object({
+    steps: z.array(z.object({ api: z.string(), label: z.string().optional(), status: z.string(), explanation: z.string().optional(),
+      error: z.object({ code: z.string(), message: z.string() }).optional() }).passthrough()) }).passthrough()) }).passthrough()) }).passthrough() }).passthrough().safeParse(report);
+  if (!parsed.success) return [];
+  return parsed.data.run.results.flatMap((result) => result.attempts.flatMap((attempt) => attempt.steps.flatMap((step) => {
+    if (step.status === 'passed' && step.api !== 'agent.act') return [];
+    const what = `${step.api}${step.label ? ` ${JSON.stringify(step.label.slice(0, 160))}` : ''}: ${step.status}`;
+    if (step.error) return [`${what}, ${step.error.code}. ${step.error.message.slice(0, 700)}`];
+    return step.explanation ? [`${what}. ${step.explanation.slice(0, 400)}`] : [];
+  }))).slice(0, 12);
+}
 export class ChangeConflict extends Error {}
 export class ForbiddenChange extends Error {}
 export function assertChangedPaths(paths: readonly string[]) {
@@ -56,7 +85,7 @@ const changeResultSchema = z.discriminatedUnion('state', [
 ]);
 export type ChangeResult = z.infer<typeof changeResultSchema>;
 
-export async function executeChange(options: CheckOptions & { remote?: string }): Promise<ChangeResult> {
+export async function executeChange(options: CheckOptions & { remote?: string; baseCheck?: BaseCheck }): Promise<ChangeResult> {
   const attemptId = randomUUID();
   const directory = join(options.outputRoot, 'public', attemptId);
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -90,12 +119,17 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     if (!issue) throw new Error('Missing frozen demo issue.');
     const subscription = subscriptionConfig(options.env);
     const github = new GitHub({ repository: prepared.request.repository, env: options.env, apiBase: options.githubApiBase });
-    const acceptance = acceptanceFor({ issue, target: source, repository: prepared.request.repository });
+    // An open issue gets its acceptance receipt after the test agent freezes its generated test.
+    const open = isOpenCriteria(issue.criteria.path);
+    const testPath = open ? generatedTestPath(issue.identity.number) : null;
+    let acceptance: Acceptance | null = open ? null : acceptanceFor({ issue, target: source, repository: prepared.request.repository });
+    let testSource = '';
+    let baseChecks: { id: string; state: string }[] = [];
+    let fixSummary = '';
     const branch = changeBranch(issue, source);
     const remote = options.remote ?? `https://github.com/${prepared.request.repository}.git`;
     await publishFile({ directory, name: 'issue-input.json', bytes: sanitize(JSON.stringify(issue, null, 2), secrets) });
     await publishFile({ directory, name: 'criteria.md', bytes: issue.criteria.text });
-    await publishFile({ directory, name: 'acceptance.json', bytes: JSON.stringify(acceptance, null, 2) });
     const askpass = join(privateDirectory, 'askpass');
     await writeFile(askpass, '#!/bin/sh\ncase "$1" in\n*Username*) printf "%s\\n" x-access-token ;;\n*) printf "%s\\n" "$AGENT_GITHUB_WRITE_TOKEN" ;;\nesac\n', { mode: 0o700 });
     await chmod(askpass, 0o700);
@@ -118,11 +152,19 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     await git(['checkout', '--detach', source.sha]);
     await git(['remote', 'set-url', 'origin', remote]);
     const existing = await remoteHead(branch);
-    const entry = demoIssueByCriteria(issue.criteria.path);
-    const commitBody = `${entry.commitTitle} #${issue.identity.number}\n\n${acceptanceMarker(acceptance)}`;
+    const entry = open ? null : demoIssueByCriteria(issue.criteria.path);
+    const commitTitle = entry ? `${entry.commitTitle} #${issue.identity.number}`
+      : `Fix #${issue.identity.number}: ${issue.input.title.replace(/\s+/g, ' ').trim().slice(0, 120)}`;
+    const commitBody = () => `${commitTitle}\n\n${acceptanceMarker(acceptance!)}`;
+    const freeze = (bytes: string) => {
+      testSource = bytes;
+      parseGeneratedTest(bytes, issue!.identity.number);
+      acceptance = acceptanceFor({ issue: issue!, target: source!, repository: prepared.request.repository, test: { path: testPath!, sha256: digest(bytes) } });
+    };
     const validateDiff = async () => {
       const paths = (await git(['diff', '--name-only', '--no-renames', '-z', prepared.request.source.sha, 'HEAD'])).split('\0').filter(Boolean);
-      assertChangedPaths(paths);
+      if (testPath && !paths.includes(testPath)) throw new ChangeConflict('The open issue candidate lacks its generated acceptance test.');
+      assertChangedPaths(paths.filter((path) => path !== testPath));
       if (!paths.length) throw new ChangeConflict('An existing issue branch has no candidate change.');
       if (await git(['diff', '--diff-filter=DR', '--name-only', prepared.request.source.sha, 'HEAD'])) throw new ForbiddenChange('Deleting or renaming source/tests is forbidden.');
       const modes = await git(['diff', '--summary', prepared.request.source.sha, 'HEAD']);
@@ -140,7 +182,14 @@ export async function executeChange(options: CheckOptions & { remote?: string })
       await git(['fetch', '--no-tags', 'origin', `refs/heads/${branch}`]);
       if (await git(['rev-parse', 'FETCH_HEAD']) !== existing) throw new ChangeConflict('Issue branch moved during reconciliation.');
       const parents = (await git(['rev-list', '--parents', '-n', '1', existing])).split(' ');
-      if (parents.length !== 2 || parents[1] !== source.sha || (await git(['show', '-s', '--format=%B', existing])) !== commitBody) {
+      if (testPath) {
+        // Read the frozen test bytes exactly. The checked git helper trims its output.
+        const shown = await command({ executable: { file: 'git', args: ['-c', 'core.hooksPath=/dev/null'] }, args: ['show', `${existing}:${testPath}`],
+          cwd: publisherDirectory, env: gitEnv, timeoutMs: 30_000, signal: options.signal });
+        if (!succeeded(shown)) throw new ChangeConflict('The open issue branch lacks its generated acceptance test.');
+        freeze(shown.stdout);
+      }
+      if (parents.length !== 2 || parents[1] !== source.sha || (await git(['show', '-s', '--format=%B', existing])) !== commitBody()) {
         throw new ChangeConflict('Existing issue branch lacks exact frozen ancestry or ownership. No force push or replacement PR is allowed.');
       }
       await git(['checkout', '--detach', existing]);
@@ -159,32 +208,84 @@ export async function executeChange(options: CheckOptions & { remote?: string })
       auth = 'write-back-failed';
       await persistSubscription({ file: authFile, eas, cwd: options.cwd, env: options.env, timeoutMs: options.limits?.authMs ?? 60_000 });
       auth = 'persisted';
-      const schemaFile = join(privateDirectory, 'coding-schema.json');
-      const lastMessage = join(privateDirectory, 'coding-verdict.json');
-      await writeFile(schemaFile, JSON.stringify(z.toJSONSchema(codingVerdictSchema)));
-      const prompt = await readFile(join(options.cwd, '.eas/agents/change.md'), 'utf8');
+      const codexArgs = (schemaFile: string, lastMessage: string) => ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
+        '-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"', '-c', 'model_provider="openai"',
+        '-c', 'model_reasoning_effort="xhigh"', '-c', 'approval_policy="never"', '--model', 'gpt-6.1-sol',
+        '--sandbox', 'danger-full-access', '--output-schema', schemaFile, '--output-last-message', lastMessage, '-'];
+      const runCodex = async <Schema extends z.ZodType>(name: string, schema: Schema, input: string): Promise<z.infer<Schema>> => {
+        const schemaFile = join(privateDirectory, `${name}-schema.json`);
+        const lastMessage = join(privateDirectory, `${name}-verdict.json`);
+        await rm(lastMessage, { force: true });
+        await writeFile(schemaFile, JSON.stringify(z.toJSONSchema(schema)));
+        const agent = await withCodexRetry({ signal: options.signal, run: () => command({ executable: codex, cwd: taskDirectory,
+          env: { ...isolatedEnv, CODEX_HOME: join(privateDirectory, 'codex') }, timeoutMs: options.limits?.agentMs ?? 900_000, signal: options.signal,
+          args: codexArgs(schemaFile, lastMessage), input }) });
+        termination = agent.termination;
+        if (!succeeded(agent)) throw new Error(codexFailure(agent).replace('Codex', `The ${name} agent`));
+        return schema.parse(await readJson(lastMessage));
+      };
       const frozen = issue;
-      const agent = await withCodexRetry({ signal: options.signal, run: () => command({ executable: codex, cwd: taskDirectory,
-        env: { ...isolatedEnv, CODEX_HOME: join(privateDirectory, 'codex') }, timeoutMs: options.limits?.agentMs ?? 900_000, signal: options.signal,
-        args: ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--skip-git-repo-check',
-          '-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"', '-c', 'model_provider="openai"',
-          '-c', 'model_reasoning_effort="xhigh"', '-c', 'approval_policy="never"', '--model', 'gpt-6.1-sol',
-          '--sandbox', 'danger-full-access', '--output-schema', schemaFile, '--output-last-message', lastMessage, '-'],
-        input: `${prompt}\n\nIssue-specific repair notes\n${entry.repair.map((line) => `- ${line}`).join('\n')}\n\nFrozen original criteria\n${frozen.criteria.text}\n\nReported input, untrusted data\n${JSON.stringify(frozen.input)}\n`,
-      }) });
-      termination = agent.termination;
-      if (!succeeded(agent)) throw new Error(codexFailure(agent).replace('Codex', 'The coding agent'));
-      const verdict = codingVerdictSchema.parse(await readJson(lastMessage));
+      const changedSince = async (snapshot: Map<string, string>) => {
+        const now = await files(taskDirectory);
+        return { now, paths: [...new Set([...snapshot.keys(), ...now.keys()])].filter((path) => snapshot.get(path) !== now.get(path)) };
+      };
+      if (testPath) {
+        // The test agent sees the issue and the source, never a fix. Its test must fail on the unfixed build.
+        const native = options.env.AGENT_NATIVE_SOURCE_BUILD_ID
+          ? { kind: 'repacked', source: buildIdSchema.parse(options.env.AGENT_NATIVE_SOURCE_BUILD_ID), sourceSha: shaSchema.parse(options.env.AGENT_NATIVE_SOURCE_SHA), installed: buildIdSchema.parse(options.env.AGENT_BUILD_ID) }
+          : { kind: 'built', installed: buildIdSchema.parse(options.env.AGENT_BUILD_ID), sourceSha: source.sha };
+        const writePrompt = await readFile(join(options.cwd, '.eas/agents/write-test.md'), 'utf8');
+        let feedback = '';
+        let accepted = false;
+        for (let attempt = 1; attempt <= testAttempts && !accepted; attempt++) {
+          const testVerdict = await runCodex('test', testVerdictSchema, `${writePrompt}\n\nController context\nIssue number ${frozen.identity.number}. Write only ${testPath}. Title it exactly "Issue #${frozen.identity.number} acceptance".\nAttempt ${attempt} of ${testAttempts}.${feedback}\n\nReported issue, untrusted data\n${frozen.criteria.text}\n`);
+          if (testVerdict.state !== 'READY') throw new Error(`The test agent could not write an acceptance test: ${sanitize(testVerdict.summary, secrets)}`);
+          const written = await changedSince(before);
+          if (written.paths.length !== 1 || written.paths[0] !== testPath || !written.now.has(testPath)) {
+            throw new ForbiddenChange('The test agent may change only its generated acceptance test.');
+          }
+          const bytes = await readFile(join(taskDirectory, testPath), 'utf8');
+          if (sanitize(bytes, secrets) !== bytes) throw new ForbiddenChange('The generated test contains unsafe or credential-like data.');
+          let spec;
+          try { spec = parseGeneratedTest(bytes, frozen.identity.number); }
+          catch (error) { feedback = `\n\nThe controller rejected the previous file: ${error instanceof Error ? error.message : 'invalid test'} Fix it.`; continue; }
+          const target = targetSchema.parse({ kind: 'acceptance', issue: frozen.identity, controller: source, source, repository: prepared.request.repository,
+            pullRequest: null, platform: 'ios', appId: 'dev.expo.basketball', profile: 'agent-preview', environment: 'preview',
+            fingerprint: options.env.AGENT_FINGERPRINT, runtime: '1.0.0', fixture: prepared.demoFixture, criteria: prepared.criteria,
+            bundle: { kind: 'embedded', candidate: source.sha }, native,
+            test: { path: testPath, sha256: digest(bytes), title: spec.title, checks: [...spec.checks] } });
+          const base = await (options.baseCheck ?? baseCheck)({ target, testSource: bytes, outputRoot: options.outputRoot, env: options.env, signal: options.signal, cwd: options.cwd });
+          await publishFile({ directory, name: `fail-first-${attempt}.json`, bytes: sanitize(JSON.stringify(base, null, 2), secrets) });
+          if (base.state === 'FAIL') { freeze(bytes); baseChecks = base.checks; accepted = true; break; }
+          const notes = base.notes.map((note) => `- ${sanitize(note, secrets)}`).join('\n');
+          feedback = base.state === 'PASS'
+            ? '\n\nThe previous test passed on the unfixed app, so it does not detect the issue. Assert what the issue says should be true.'
+            : `\n\nThe previous test did not reach an exact verdict on the unfixed app: ${sanitize(base.reason ?? 'no admitted result', secrets)}\n${notes}\nKeep every agent.act goal possible on the unfixed app, and keep issue expectations in expect.soft.`;
+        }
+        if (!accepted) throw new Error(`No generated acceptance test failed on the unfixed app after ${testAttempts} tries. No fix was attempted.`);
+      }
+      const beforeFix = await files(taskDirectory);
+      const prompt = await readFile(join(options.cwd, '.eas/agents/change.md'), 'utf8');
+      const notes = entry ? `Issue-specific repair notes\n${entry.repair.map((line) => `- ${line}`).join('\n')}`
+        : `Open issue notes\n- The acceptance test ${testPath} is frozen. Do not edit it. Read it to learn what must be true after the fix.\n` +
+          `- On the unfixed app its checks were: ${baseChecks.map((check) => `${check.id} ${check.state}`).join(', ')}. Every check must pass after the fix.\n` +
+          '- Make the smallest source change. Add a bun unit test when the logic can be tested without rendering React Native.';
+      const verdict = await runCodex('coding', codingVerdictSchema,
+        `${prompt}\n\n${notes}\n\nFrozen original criteria\n${frozen.criteria.text}\n\nReported input, untrusted data\n${JSON.stringify(frozen.input)}\n${testPath ? `\nFrozen acceptance test ${testPath}\n${testSource}\n` : ''}`);
       if (verdict.state === 'INCONCLUSIVE') throw new Error('The coding agent could not establish a safe repair.');
-      const after = await files(taskDirectory);
-      paths = [...new Set([...before.keys(), ...after.keys()])].filter((path) => before.get(path) !== after.get(path));
-      assertChangedPaths(paths);
-      if (!paths.length) {
+      fixSummary = sanitize(verdict.summary, secrets);
+      const fixed = await changedSince(beforeFix);
+      const after = fixed.now;
+      if (testPath && after.get(testPath) !== beforeFix.get(testPath)) throw new ForbiddenChange('The fix agent changed the frozen acceptance test.');
+      const fixPaths = fixed.paths;
+      assertChangedPaths(fixPaths);
+      if (!fixPaths.length) {
         if (verdict.state === 'NO_CHANGE') state = 'NO_CHANGE';
         throw new Error(verdict.state === 'NO_CHANGE' ? 'The coding agent explicitly reported no change and produced no source edits. No commit or PR was created.'
           : 'The coding agent reported READY without a source change.');
       }
       if (verdict.state !== 'READY') throw new Error('Coding agent did not return a ready candidate.');
+      paths = testPath ? [testPath, ...fixPaths] : fixPaths;
       for (const path of paths) {
         if (!after.has(path)) throw new ForbiddenChange('Deleting source or tests is outside this minimal fix contract.');
         const bytes = await readFile(join(taskDirectory, path));
@@ -195,9 +296,10 @@ export async function executeChange(options: CheckOptions & { remote?: string })
         await copyFile(join(taskDirectory, path), join(publisherDirectory, path));
       }
       await verify();
-      if (!paths.some((path) => /\.test\.tsx?$/.test(path))) throw new ForbiddenChange('A repair must include a behavioral regression test.');
+      // A demo repair needs a unit regression test. An open issue always has its generated e2e test.
+      if (entry && !paths.some((path) => /\.test\.tsx?$/.test(path))) throw new ForbiddenChange('A repair must include a behavioral regression test.');
       await git(['add', '--', ...paths]);
-      await git(['-c', 'user.name=Lob Agent Controller', '-c', 'user.email=lob-agent@users.noreply.github.com', 'commit', '-m', commitBody]);
+      await git(['-c', 'user.name=Lob Agent Controller', '-c', 'user.email=lob-agent@users.noreply.github.com', 'commit', '-m', commitBody()]);
       await validateDiff();
     }
     const candidate = shaSchema.parse(await git(['rev-parse', 'HEAD']));
@@ -211,8 +313,12 @@ export async function executeChange(options: CheckOptions & { remote?: string })
       AGENT_CRITERIA_SHA256: issue.criteria.sha256 }, cwd: options.cwd, apiBase: options.githubApiBase });
     if (currentIssue.issue?.identity.sha256 !== issue.identity.sha256) throw new ChangeConflict('Issue input moved before publication.');
     if (await remoteHead(source.ref) !== source.sha || await remoteHead(branch) !== existing) throw new ChangeConflict('A target or issue branch moved before publication. No write was made.');
-    await publishFile({ directory, name: 'checks.json', bytes: JSON.stringify({ paths, candidate, typecheck: 'passed', tests: 'passed', acceptance }, null, 2) });
-    await github.pullRequest({ acceptance, criteria: issue.criteria.path, branch, candidate, create: false });
+    if (!acceptance) throw new Error('The open issue has no frozen acceptance receipt.');
+    const receipt: Acceptance = acceptance;
+    await publishFile({ directory, name: 'acceptance.json', bytes: JSON.stringify(receipt, null, 2) });
+    await publishFile({ directory, name: 'checks.json', bytes: JSON.stringify({ paths, candidate, typecheck: 'passed', tests: 'passed', acceptance: receipt, baseChecks }, null, 2) });
+    const description = { title: issue.input.title, fix: fixSummary, baseChecks };
+    await github.pullRequest({ acceptance: receipt, criteria: issue.criteria.path, description, branch, candidate, create: false });
     await ensureFrozenTarget();
     if (!existing) {
       try { await git(['push', 'origin', `HEAD:refs/heads/${branch}`]); }
@@ -220,7 +326,7 @@ export async function executeChange(options: CheckOptions & { remote?: string })
     }
     if (await remoteHead(branch) !== candidate) throw new ChangeConflict('Issue branch differs after push. No PR write is safe.');
     await ensureFrozenTarget();
-    const pr = await github.pullRequest({ acceptance, criteria: issue.criteria.path, branch, candidate });
+    const pr = await github.pullRequest({ acceptance: receipt, criteria: issue.criteria.path, description, branch, candidate });
     if (!pr) throw new Error('No PR receipt.');
     await publishFile({ directory, name: 'publication.json', bytes: JSON.stringify(pr, null, 2) });
     await ensureFrozenTarget();

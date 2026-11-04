@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { z } from 'zod';
-import { criteriaPaths, demoIssueByCriteria, demoIssueKeys, demoIssues } from './demo-issues';
+import { allCriteriaPaths, demoIssueByCriteria, demoIssueKeys, demoIssues, isOpenCriteria } from './demo-issues';
+import { generatedTestPattern, maxGeneratedChecks } from './generated-test';
 
 export const shaSchema = z.string().regex(/^[a-f0-9]{40}$/).brand('Sha');
 export const digestSchema = z.string().regex(/^[a-f0-9]{64}$/).brand('Digest');
@@ -36,8 +37,14 @@ export const targetSchema = z.discriminatedUnion('kind', [
   z.strictObject({ ...targetFields, kind: z.literal('check'), issue: z.null(),
     criteria: z.strictObject({ path: z.literal('.eas/agents/check-ios.md'), sha256: digestSchema }) }),
   z.strictObject({ ...targetFields, kind: z.enum(['triage', 'acceptance']), issue: issueRefSchema,
-    criteria: z.strictObject({ path: z.enum(criteriaPaths), sha256: digestSchema }) }),
+    criteria: z.strictObject({ path: z.enum(allCriteriaPaths), sha256: digestSchema }),
+    // The frozen generated test of an open issue, with the checks its screenshots name.
+    test: z.strictObject({ path: z.string().regex(generatedTestPattern), sha256: digestSchema, title: z.string().min(1).max(120),
+      checks: z.array(z.string().regex(/^[a-z][a-z0-9-]{1,39}$/)).min(1).max(maxGeneratedChecks) }).optional() }),
 ]).superRefine((target, ctx) => {
+  if (target.kind !== 'check' && target.test && (target.kind !== 'acceptance' || !isOpenCriteria(target.criteria.path))) {
+    ctx.addIssue({ code: 'custom', message: 'Only an open issue acceptance target carries a generated test.' });
+  }
   if (target.controller.sha !== target.source.sha || target.bundle.candidate !== target.source.sha) {
     ctx.addIssue({ code: 'custom', message: 'Controller, checkout, and candidate SHA must agree.' });
   }
@@ -77,7 +84,9 @@ function checksSchema<const Ids extends readonly [string, ...string[]]>(ids: Ids
 export const verdictSchema = checksSchema(['scores', 'current-player', 'search-back']);
 const issueVerdictSchemas = new Map(demoIssueKeys.map((key) => [demoIssues[key].criteria, checksSchema(demoIssues[key].deviceChecks)]));
 export function verdictSchemaFor(criteria: { path: string }) {
-  if (criteria.path === '.eas/agents/check-ios.md') return verdictSchema;
+  // An open issue has no device prompt of its own. Agentic CI runs the smoke check on it,
+  // and its generated e2e test is the acceptance check.
+  if (criteria.path === '.eas/agents/check-ios.md' || isOpenCriteria(criteria.path)) return verdictSchema;
   const schema = issueVerdictSchemas.get(demoIssueByCriteria(criteria.path).criteria);
   if (!schema) throw new Error('Unknown demo issue criteria.');
   return schema;

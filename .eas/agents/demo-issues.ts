@@ -52,3 +52,13 @@ export function demoIssueByCriteria(path: string): DemoIssue {
   if (!issue) throw new Error('Unknown demo issue criteria.');
   return issue;
 }
+
+// An open issue has no registry entry. Its criteria are the issue title and body,
+// and its acceptance test is generated before the fix and frozen by SHA-256.
+export const openCriteriaPath = 'github-issue' as const;
+export const allCriteriaPaths = [...criteriaPaths, openCriteriaPath] as [DemoIssue['criteria'] | typeof openCriteriaPath, ...(DemoIssue['criteria'] | typeof openCriteriaPath)[]];
+export const isOpenCriteria = (path: string) => path === openCriteriaPath;
+export const hasDemoMarker = (body: string) => /<!-- lob-demo:[a-z0-9-]+ -->/.test(body);
+export function openCriteriaText(input: { number: number; title: string; body: string }) {
+  return `# ${input.title}\n\nGitHub issue #${input.number}\n\n${input.body.trim()}\n`;
+}

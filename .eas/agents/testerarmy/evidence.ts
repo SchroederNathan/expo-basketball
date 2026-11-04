@@ -9,9 +9,8 @@ import { derivePlayback, probeMedia } from '../evidence-media';
 import type { EvidenceWriter } from '../evidence-tools';
 import { digest } from '../result';
 import { identityLabel } from '../simulator';
-import { demoIssueByCriteria } from '../demo-issues';
 import { testerArmyResultSchema, originalFixtureSha256, type TesterArmyResultV1 } from './result';
-import { admitReport } from './report';
+import { admitReport, assertFrozenInputs } from './report';
 
 export async function stageTesterArmyEvidence({ result: input, root, directory, cwd, env, phase = evidencePhase() }: {
   result: TesterArmyResultV1; root: string; directory: string; cwd: string; env: NodeJS.ProcessEnv; phase?: EvidencePhase;
@@ -21,9 +20,7 @@ export async function stageTesterArmyEvidence({ result: input, root, directory, 
   const evidence = result.evidence;
   if (!target || target.kind !== 'acceptance' || !target.pullRequest || !evidence || !result.framework || result.lease?.state !== 'ready') throw new Error('No admitted e2e PR evidence.');
   const url = runUrl(result.runId, result.runUrl);
-  if (digest(await readFile(join(cwd, target.criteria.path))) !== target.criteria.sha256 ||
-    digest(await readFile(join(cwd, 'demo/fixtures/prizepicks-v1.json'))) !== target.fixture.sha256 ||
-    target.criteria.sha256 !== demoIssueByCriteria(target.criteria.path).criteriaSha256 || target.fixture.sha256 !== originalFixtureSha256) throw new Error('Source criteria or fixture changed before e2e publication.');
+  await assertFrozenInputs(cwd, target, true);
   const identity = z.object({ observedBefore: z.string(), observedAfter: z.string(), installedBuild: z.string(),
     framework: z.unknown(), ledger: z.unknown(), reportSha256: z.string() }).parse(JSON.parse(Buffer.from(await evidenceBytes(root, evidence.identity.path, evidence.identity)).toString()));
   if (identity.observedBefore !== identityLabel(target) || identity.observedAfter !== identityLabel(target) ||
