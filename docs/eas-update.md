@@ -31,12 +31,26 @@ Use EAS environment variables for values that must be present during cloud build
 
 ## Compatibility and testing
 
-The current runtime is 1.0.0, derived from the app version. When changing native libraries, config plugins, native settings, or the Expo SDK, bump the Expo app version and create a new native build before publishing for that runtime. Incrementing only the iOS build number or Android version code does not change this runtime policy.
+The current runtime is 1.0.1, derived from the app version. When changing native libraries, config plugins, native settings, or the Expo SDK, bump the Expo app version and create a new native build before publishing for that runtime. Incrementing only the iOS build number or Android version code does not change this runtime policy.
 
 Keep JavaScript and asset updates on the same app version while their native requirements remain compatible. EAS Update cannot add a native module to an already installed binary.
 
 For a release build, fully terminate and reopen the app, allow time to download the update, then terminate and reopen once more if needed. The default configuration downloads in the background and applies a downloaded update on a later cold launch. No startup delay was added.
 
 Setup created the project, channels, and branches. It did not publish an update or request a cloud build. OTA download and activation need a rebuilt client and a published compatible update before they can be tested.
+
+## PR QR previews
+
+The `.github/workflows/pr-update-preview.yml` workflow is the live-demo path for external TestFlight testers. On every trusted PR update it publishes both platforms to the channel `pr-<number>`, then creates or updates a single PR comment with a QR code for:
+
+```text
+basketball://update?channel=pr-<number>
+```
+
+The `update` route validates that channel, calls `Updates.setUpdateRequestHeadersOverride({ 'expo-channel-name': channel })`, checks and fetches a compatible update, and reloads into it. The override persists on the device until another channel is selected or the app is uninstalled. The comment can include the public TestFlight invitation link when the repository variable `TESTFLIGHT_URL` is set.
+
+The app's custom URL scheme opens an installed TestFlight build. It cannot install a binary or make a native change through EAS Update. The TestFlight build must already use the same app version/runtime as the PR update and must contain the `/update` route; a pre-feature binary cannot bootstrap this route from a QR scan. For the existing external TestFlight build, publish the route once to its `testflight` channel, then fully quit and reopen the app so it downloads and activates that bootstrap update (a second cold launch may be needed). After that one-time bootstrap, testers can scan each PR QR code. Native dependency, config-plugin, or SDK changes require a new build first. The QR image is rendered by QuickChart from the non-secret custom-scheme link.
+
+To repeat the bootstrap from this checked-out source, use `npx --yes eas-cli@25.3.0 update --channel testflight --environment preview --platform ios --message "Bootstrap PR QR route" --non-interactive`. This changes the update served to the existing TestFlight channel; PR previews continue to use their isolated `pr-<number>` channels.
 
 See the official [setup guide](https://docs.expo.dev/eas-update/getting-started/), [runtime-version guide](https://docs.expo.dev/eas-update/runtime-versions/), and [SDK 58 updates reference](https://docs.expo.dev/versions/v58.0.0/sdk/updates/).
