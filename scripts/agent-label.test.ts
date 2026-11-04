@@ -235,7 +235,7 @@ for (const badRef of ['--ref=main', 'release/../main', 'refs//heads/main', 'rele
 }
 
 for (const patch of [
-  { state: 'closed' }, { body: 'Unknown issue' }, { body: '<!-- lob-demo: -->' }, { body: '<!-- lob-demo:Player_Label -->' }, { body: null }, { author_association: 'CONTRIBUTOR' },
+  { state: 'closed' }, { body: '' }, { body: '   ' }, { body: null }, { author_association: 'CONTRIBUTOR' },
   { author_association: 'NONE' }, { pull_request: {} }, { pull_request: null }, { number: 99 },
   { html_url: 'https://github.com/attacker/fork/issues/42' },
   { repository_url: 'https://api.github.com/repos/attacker/fork' }, { labels: [] }, { id: 0 }, { node_id: '' },
@@ -246,6 +246,18 @@ for (const patch of [
     assert.equal(h.spawns.length, 0);
   });
 }
+
+test('an open issue with no marker reaches Issue to PR', async t => {
+  const h = await fixture(t, { currentIssue: { ...issue(), body: 'The Today button should read Back to today.' } });
+  assert.equal((await h.run()).status, 'dispatched');
+  assert.equal(h.spawns.length, 1);
+});
+
+test('triage still needs a demo marker', async t => {
+  const h = await fixture(t, { currentIssue: { ...issue(), body: 'The Today button should read Back to today.' } });
+  assert.equal((await h.run({ event: { ...event(), label: { name: 'agent-triage' } } })).status, 'ignored');
+  assert.equal(h.spawns.length, 0);
+});
 
 test('any well-formed demo marker reaches EAS, which validates the issue name', async t => {
   const h = await fixture(t, { currentIssue: { ...issue(), body: '<!-- lob-demo:scores-title -->\nReal bug report.' } });
