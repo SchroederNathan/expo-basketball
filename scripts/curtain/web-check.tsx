@@ -10,7 +10,7 @@ export async function checkUnsupportedWeb(): Promise<string> {
   try {
     await new Promise<void>((resolve, reject) => {
       root.render(<CurtainSurfaceView
-        input={{ palette: { away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 402, height: 688, pixelRatio: 1 }}
+        input={{ palette: { kind: 'matchup', away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 402, height: 688, pixelRatio: 1 }}
         onReady={() => reject(new Error('Unsupported web revealed a GPU frame.'))}
         onUnavailable={resolve}
       />);

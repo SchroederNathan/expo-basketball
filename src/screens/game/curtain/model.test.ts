@@ -3,12 +3,12 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { curtainShader, leatherBase64 } from './assets.generated';
-import { FabricFrame, gridIndices, INDEX_COUNT, leatherBytes } from './model';
+import { FabricFrame, gridIndices, INDEX_COUNT, leatherBytes, type Palette } from './model';
 import provenance from './provenance.json';
 
-const red = { away: '#FF0000', home: '#0000FF' };
-const blue = { away: '#0000FF', home: '#FF0000' };
-const green = { away: '#00FF00', home: '#00FF00' };
+const red: Palette = { kind: 'matchup', away: '#FF0000', home: '#0000FF' };
+const blue: Palette = { kind: 'matchup', away: '#0000FF', home: '#FF0000' };
+const green: Palette = { kind: 'matchup', away: '#00FF00', home: '#00FF00' };
 
 test('uniform contract uses physical dimensions, logical grain scale, zero padding and exact color offsets', () => {
   const frame = new FabricFrame();
@@ -17,6 +17,22 @@ test('uniform contract uses physical dimensions, logical grain scale, zero paddi
   const packed = frame.pack(1000, 1206, 2064, 402);
   assert.equal(packed.byteLength, 64);
   assert.deepEqual([...packed], [1, 1206, 2064, 0, 402, 0, 0, 0, 1, 0, 0, 1, 0, 0, 1, 1]);
+});
+
+test('a team palette fills both color slots and lights the fabric from the top', () => {
+  const frame = new FabricFrame();
+  frame.update({ kind: 'team', color: '#FF8000' }, true, false, 0);
+  const packed = frame.pack(0, 1206, 2064, 402);
+  assert.equal(packed[3], 1);
+  assert.deepEqual([...packed.slice(8)], [1, 128 / 255, 0, 1, 1, 128 / 255, 0, 1].map(Math.fround));
+});
+
+test('switching between a game and a team page blends the lighting direction', () => {
+  const frame = new FabricFrame();
+  frame.update(red, true, false, 0);
+  frame.update({ kind: 'team', color: '#FF0000' }, true, true, 1000);
+  assert.equal(frame.pack(1400, 402, 688, 402)[3], 0.5);
+  assert.equal(frame.pack(1800, 402, 688, 402)[3], 1);
 });
 
 test('wind accumulates active time and resumes without counting hidden or reduced time', () => {
