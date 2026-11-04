@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           channel="pr-${PR_NUMBER}"
-          bun run eas update \
+          npx --yes eas-cli@25.3.0 update \
             --channel "$channel" \
             --environment preview \
             --platform all \
