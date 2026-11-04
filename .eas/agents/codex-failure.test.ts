@@ -10,6 +10,8 @@ test('names the failure category, exit code, and HTTP status', () => {
   assert.equal(exited('unexpected status 401 Unauthorized: refresh token expired'), 'Codex did not finish successfully (exit 1, authentication, HTTP 401).');
   assert.equal(exited("The model 'gpt-6.1-sol' does not exist or is not supported"), 'Codex did not finish successfully (exit 1, model unavailable).');
   assert.equal(exited('unexpected status 400: {"error":{"type":"overloaded"}}'), 'Codex did not finish successfully (exit 1, provider overloaded, HTTP 400).');
+  assert.equal(exited('ERROR: Selected model is at capacity. Please try a different model.'), 'Codex did not finish successfully (exit 1, provider overloaded).');
+  assert.equal(exited('The model gpt-x does not exist'), 'Codex did not finish successfully (exit 1, model unavailable).');
   assert.equal(exited('stream disconnected before completion'), 'Codex did not finish successfully (exit 1, network).');
   assert.equal(exited('something else entirely'), 'Codex did not finish successfully (exit 1, unrecognized error).');
 });
