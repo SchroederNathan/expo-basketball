@@ -212,6 +212,7 @@ export async function executeChange(options: CheckOptions & { remote?: string; b
         '-c', 'cli_auth_credentials_store="file"', '-c', 'forced_login_method="chatgpt"', '-c', 'model_provider="openai"',
         '-c', 'model_reasoning_effort="xhigh"', '-c', 'approval_policy="never"', '--model', 'gpt-6.1-sol',
         '--sandbox', 'danger-full-access', '--output-schema', schemaFile, '--output-last-message', lastMessage, '-'];
+      let failures = 0;
       const runCodex = async <Schema extends z.ZodType>(name: string, schema: Schema, input: string): Promise<z.infer<Schema>> => {
         const schemaFile = join(privateDirectory, `${name}-schema.json`);
         const lastMessage = join(privateDirectory, `${name}-verdict.json`);
@@ -221,7 +222,13 @@ export async function executeChange(options: CheckOptions & { remote?: string; b
           env: { ...isolatedEnv, CODEX_HOME: join(privateDirectory, 'codex') }, timeoutMs: options.limits?.agentMs ?? 900_000, signal: options.signal,
           args: codexArgs(schemaFile, lastMessage), input }) });
         termination = agent.termination;
-        if (!succeeded(agent)) throw new Error(codexFailure(agent).replace('Codex', `The ${name} agent`));
+        if (!succeeded(agent)) {
+          // Keep the redacted end of the agent's output in the private run artifacts for diagnosis.
+          failures++;
+          await publishFile({ directory, name: `${name}-agent-error-${failures}.txt`,
+            bytes: sanitize(`${agent.stderr.slice(-6000)}\n--- stdout ---\n${agent.stdout.slice(-2000)}`, secrets) });
+          throw new Error(codexFailure(agent).replace('Codex', `The ${name} agent`));
+        }
         return schema.parse(await readJson(lastMessage));
       };
       const frozen = issue;
