@@ -90,22 +90,12 @@ const longFormat = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
   timeZone: 'UTC',
 });
-const shortFormat = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-});
-
 export function weekdayLabel(date: Ymd): string {
   return weekdayFormat.format(utcMs(date)).toUpperCase();
 }
 
 export function longDateLabel(date: Ymd): string {
   return longFormat.format(utcMs(date));
-}
-
-export function shortDateLabel(date: Ymd): string {
-  return shortFormat.format(utcMs(date));
 }
 
 export type DayCell = {
