@@ -15,6 +15,7 @@ import { SectionLabel } from '@/components/section-label';
 import { TeamLogo } from '@/components/team-logo';
 import type { PlayerRef } from '@/domain/ids';
 import type { League } from '@/domain/league';
+import { seasonStatTiles } from '@/domain/player-stats';
 import { gameHref, parsePlayerParams, teamHref } from '@/navigation/hrefs';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, radius, space, typography } from '@/theme';
@@ -32,11 +33,11 @@ function SeasonStats({ player }: { player: PlayerPage['player'] }) {
     <>
       <SectionLabel>{player.season || 'Season averages'}</SectionLabel>
       <View style={styles.tiles}>
-        {player.stats.map((stat) => (
+        {seasonStatTiles(player.stats).map((stat) => (
           <View
-            key={stat.label}
+            key={stat.key}
             accessible
-            accessibilityLabel={`${stat.label} ${stat.value}${stat.rank ? `, ranked ${stat.rank}` : ''}`}
+            accessibilityLabel={stat.accessibilityLabel}
             style={styles.tile}
           >
             <DisplayText size="medium" numberOfLines={1} adjustsFontSizeToFit>
