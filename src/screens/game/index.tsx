@@ -100,7 +100,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
           title: 'Game',
           headerTransparent: true,
           headerTitle: game ? () => <GameStatusTitle game={game} /> : undefined,
-          headerRight: game
+          headerRight: game && !ios
             ? () => (
                 <HeaderIconButton
                   icon={{ ios: 'square.and.arrow.up', android: 'share' }}
@@ -111,6 +111,13 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
             : undefined,
         }}
       />
+      {/* A native bar item, unlike a custom headerRight view, moves into the
+          iPhone Duo's right rail with the system's other trailing controls. */}
+      {game && ios ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button icon="square.and.arrow.up" accessibilityLabel="Share game" onPress={() => void shareGame(game)} />
+        </Stack.Toolbar>
+      ) : null}
       <FlatList
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"

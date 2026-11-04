@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { Screen } from '@/components/screen';
 import { HeaderIconButton } from '@/components/header-icon-button';
-import { leagueHeaderOptions } from '@/components/league-picker';
+import { LeagueToolbar, leagueHeaderOptions } from '@/components/league-picker';
 import { dayWindow, shortDateLabel, windowIndex, type Ymd } from '@/domain/dates';
 import type { League } from '@/domain/league';
 import { parseScoresParams } from '@/navigation/hrefs';
@@ -114,7 +114,7 @@ export function ScoresScreen() {
           headerStyle: { backgroundColor: colors.background },
           headerShadowVisible: false,
           ...leagueHeaderOptions({ value: league, onChange: changeLeague }),
-          headerRight: () => (
+          headerRight: Platform.OS === 'ios' ? undefined : () => (
             <View style={styles.headerActions}>
               {selected !== today ? (
                 <Pressable
@@ -143,6 +143,32 @@ export function ScoresScreen() {
           ),
         }}
       />
+      <LeagueToolbar value={league} onChange={changeLeague} />
+      {/* Native bar items move into the iPhone Duo's rail. Each needs an icon,
+          because text-only items stay in the horizontal bar. */}
+      {Platform.OS === 'ios' ? (
+        <Stack.Toolbar placement="right">
+          <Stack.Toolbar.Button
+            hidden={selected === today}
+            icon="arrow.uturn.backward"
+            accessibilityLabel="Go to today"
+            onPress={() => selectDate(today)}
+          >
+            Today
+          </Stack.Toolbar.Button>
+          <Stack.Toolbar.Button
+            hidden={!CALENDAR_AVAILABLE}
+            icon="calendar"
+            accessibilityLabel="Choose a date"
+            onPress={() => setCalendarOpen(true)}
+          />
+          <Stack.Toolbar.Button
+            icon="bell"
+            accessibilityLabel="Notification settings"
+            onPress={() => router.push('/notifications')}
+          />
+        </Stack.Toolbar>
+      ) : null}
       <DateStrip selected={selected} today={today} onSelect={selectDate} />
       <FlatList
         key={`${league}:${anchor}:${width}`}
