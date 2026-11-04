@@ -1,0 +1,90 @@
+name: PR TestFlight update preview
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-update-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    # Forks cannot receive EXPO_AGENT_TOKEN. A maintainer can publish a fork's
+    # candidate from a trusted branch after reviewing it.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out the PR source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: 1.2.22
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Publish the PR channel update
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_AGENT_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          channel="pr-${PR_NUMBER}"
+          bun run eas update \
+            --channel "$channel" \
+            --environment preview \
+            --platform all \
+            --message "PR #${PR_NUMBER} ${PR_SHA}" \
+            --non-interactive
+
+      - name: Comment the QR link on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+          TESTFLIGHT_URL: ${{ vars.TESTFLIGHT_URL }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          channel="pr-${PR_NUMBER}"
+          deep_link="basketball://update?channel=${channel}"
+          encoded_link="$(node -e 'process.stdout.write(encodeURIComponent(process.argv[1]))' "$deep_link")"
+          qr_url="https://quickchart.io/qr?size=320&text=${encoded_link}"
+          comment_file="$(mktemp)"
+          {
+            echo '<!-- expo-pr-update-preview -->'
+            echo "## TestFlight PR preview · ${channel}"
+            echo
+            if [ -n "${TESTFLIGHT_URL}" ]; then
+              echo "1. [Install or open the TestFlight build](${TESTFLIGHT_URL})."
+            else
+              echo '1. Install the current TestFlight build for **Lob** first.'
+            fi
+            echo '2. Scan this QR code with the iPhone camera. The installed app will request the compatible update on this PR channel.'
+            echo
+            echo "![Scan to open ${channel}](${qr_url})"
+            echo
+            echo "[Open the preview link on an installed app](${deep_link}) · source \`${PR_SHA}\`"
+            echo
+            echo '> The TestFlight binary must already contain this app version/runtime. PRs that change native code still require a new TestFlight build.'
+          } > "$comment_file"
+
+          existing_id="$(gh api "repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate --jq '.[] | select(.body | contains("<!-- expo-pr-update-preview -->")) | .id' | tail -n 1)"
+          if [ -n "$existing_id" ]; then
+            gh api "repos/${REPOSITORY}/issues/comments/${existing_id}" --method PATCH --field body="$(cat "$comment_file")" >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body-file "$comment_file"
+          fi
+          rm -f "$comment_file"
