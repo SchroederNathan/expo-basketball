@@ -54,7 +54,7 @@ bun run update:preview --message "Describe the change"
 
 The `PR TestFlight update preview` workflow publishes every trusted pull request to an EAS channel named `pr-<number>` and updates one QR-code comment on the pull request. Testers install the current TestFlight build, scan that QR code, and the app switches to the PR channel with EAS channel surfing. Set the repository variable `TESTFLIGHT_URL` to include the public TestFlight invitation link in each comment.
 
-The QR flow only changes JavaScript and asset updates that match the installed binary's platform and `appVersion` runtime. The installed TestFlight binary must also contain the `/update` route; a pre-feature binary needs one bootstrap TestFlight build or update before QR links can work. A PR that changes native code or native configuration still needs a new TestFlight build before its preview can run.
+The QR flow only changes JavaScript and asset updates that match the installed binary's platform and `appVersion` runtime. The installed TestFlight binary must also contain the `/update` route; a pre-feature binary needs one bootstrap update on its `testflight` channel, followed by up to two cold launches, before QR links can work. A PR that changes native code or native configuration still needs a new TestFlight build before its preview can run.
 
 The [EAS Update guide](docs/eas-update.md) covers runtime compatibility, build profiles, and production publishing.
 
