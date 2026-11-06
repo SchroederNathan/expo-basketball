@@ -4,6 +4,11 @@ import { test } from 'node:test';
 import { parseYmd } from '@/domain/dates';
 import { isGameId, isPlayerId, isTeamId } from '@/domain/ids';
 import {
+  detailEntryFromHref,
+  detailEntryFromPath,
+  detailHref,
+  detailKey,
+  detailParams,
   gameHref,
   parseGameParams,
   parsePlayerParams,
@@ -50,4 +55,25 @@ test('scores links carry the league and an optional calendar date', () => {
   assert.deepEqual(withDate, { league: 'nba', date: '20261020' });
   assert.deepEqual(parseScoresParams(withDate), { league: 'nba', date: '20261020' });
   assert.deepEqual(parseScoresParams({ date: '20261332', league: 'xfl' }), { league: null, date: null });
+});
+
+test('detail entries round-trip through hrefs and resolved paths', () => {
+  const gameId = '401909861';
+  const teamId = '239';
+  const playerId = '4277905';
+  assert.ok(isGameId(gameId) && isTeamId(teamId) && isPlayerId(playerId));
+  const entries = [
+    { kind: 'game', ref: { league: 'nba', id: gameId } },
+    { kind: 'team', ref: { league: 'wnba', id: teamId } },
+    { kind: 'player', ref: { league: 'nba', id: playerId } },
+  ] as const;
+  for (const entry of entries) {
+    assert.deepEqual(detailEntryFromHref(detailHref(entry)), entry);
+    assert.deepEqual(detailEntryFromPath(`/${entry.kind}/${entry.ref.id}`, { league: entry.ref.league }), entry);
+    assert.deepEqual(paramsOf(detailHref(entry)), detailParams(entry));
+  }
+  assert.equal(detailKey(entries[0]), `game:nba:${gameId}`);
+  assert.equal(detailEntryFromPath(`/game/${gameId}`, {}), null);
+  assert.equal(detailEntryFromPath('/notifications', { league: 'nba' }), null);
+  assert.equal(detailEntryFromHref(scoresHref({ league: 'nba', date: null })), null);
 });
