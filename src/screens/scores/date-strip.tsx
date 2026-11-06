@@ -1,8 +1,11 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useLayoutEffect, useRef } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, type ScrollViewInstance } from 'react-native';
 import { dayCells, longDateLabel, type Ymd } from '@/domain/dates';
 import { colors, space } from '@/theme';
 
-const STRIP_RADIUS = 3;
+// Seven cells fill the width; the rest of the range is reached by scrolling.
+const VISIBLE_CELLS = 7;
+const STRIP_RADIUS = 30;
 
 type DateStripProps = {
   selected: Ymd;
@@ -12,8 +15,25 @@ type DateStripProps = {
 
 // Built from the calendar alone, so it works before any score has loaded.
 export function DateStrip({ selected, today, onSelect }: DateStripProps) {
+  const { width } = useWindowDimensions();
+  const cellWidth = (width - space.xs * 2) / VISIBLE_CELLS;
+  // The cells are rebuilt around the selected day, so its centred offset is constant.
+  const centredOffset = (STRIP_RADIUS - Math.floor(VISIBLE_CELLS / 2)) * cellWidth;
+  const scrollRef = useRef<ScrollViewInstance>(null);
+
+  useLayoutEffect(() => {
+    scrollRef.current?.scrollTo({ x: centredOffset, animated: false });
+  }, [selected, centredOffset]);
+
   return (
-    <View style={styles.strip}>
+    <ScrollView
+      ref={scrollRef}
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      contentOffset={{ x: centredOffset, y: 0 }}
+      style={styles.strip}
+      contentContainerStyle={styles.content}
+    >
       {dayCells(selected, today, STRIP_RADIUS).map((cell) => {
         const isSelected = cell.date === selected;
         return (
@@ -23,7 +43,7 @@ export function DateStrip({ selected, today, onSelect }: DateStripProps) {
             accessibilityRole="button"
             accessibilityState={{ selected: isSelected }}
             accessibilityLabel={`${cell.isToday ? 'Today, ' : ''}${longDateLabel(cell.date)}`}
-            style={({ pressed }) => [styles.cell, pressed ? { opacity: 0.6 } : null]}
+            style={({ pressed }) => [styles.cell, { width: cellWidth }, pressed ? { opacity: 0.6 } : null]}
           >
             <Text
               numberOfLines={1}
@@ -48,21 +68,22 @@ export function DateStrip({ selected, today, onSelect }: DateStripProps) {
           </Pressable>
         );
       })}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   strip: {
-    flexDirection: 'row',
-    paddingHorizontal: space.xs,
-    paddingBottom: space.sm,
+    flexGrow: 0,
     backgroundColor: colors.background,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.hairline,
   },
+  content: {
+    paddingHorizontal: space.xs,
+    paddingBottom: space.sm,
+  },
   cell: {
-    flex: 1,
     minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
