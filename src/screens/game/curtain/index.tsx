@@ -6,9 +6,10 @@ import { scheduleOnRN } from 'react-native-worklets';
 import { TeamBackdrop } from '@/components/team-backdrop';
 import { useReducedMotion } from '@/state/reduced-motion';
 import { colors } from '@/theme';
-import { CURTAIN_HEIGHT, CURTAIN_TOP, VISIBLE_BOTTOM, type Palette } from './model';
+import { CURTAIN_HEIGHT, CURTAIN_TOP, samePalette, VISIBLE_BOTTOM, type Palette } from './model';
 import { CurtainSurfaceView } from './surface';
 
+// The animated leather fabric behind the game, team and player headers.
 export function GameCurtain({ palette, active, contentOriginY, scrollY }: Readonly<{
   palette: Palette | null;
   active: boolean;
@@ -22,7 +23,7 @@ export function GameCurtain({ palette, active, contentOriginY, scrollY }: Readon
   const [foreground, setForeground] = useState(AppState.currentState !== 'background' && AppState.currentState !== 'inactive');
   const [pageVisible, setPageVisible] = useState(true);
   const [retained, setRetained] = useState(palette);
-  if (palette && (palette.away !== retained?.away || palette.home !== retained?.home)) setRetained(palette);
+  if (palette && !samePalette(palette, retained)) setRetained(palette);
   const reveal = useSharedValue(0);
   const onReady = useCallback(() => {
     reveal.set(withTiming(1, { duration: 800, easing: Easing.bezier(0.23, 1, 0.32, 1), reduceMotion: ReduceMotion.Never }));
@@ -56,7 +57,7 @@ export function GameCurtain({ palette, active, contentOriginY, scrollY }: Readon
   return (
     <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants" style={styles.viewport}>
       <Animated.View style={[styles.fabric, position]} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
-        {retained ? <TeamBackdrop backdrop={{ kind: 'matchup', ...retained }} /> : null}
+        {retained ? <TeamBackdrop backdrop={retained} /> : null}
         <Animated.View style={[StyleSheet.absoluteFill, opacity]}>
           <CurtainSurfaceView
             input={{ palette, animate: visible && !reduced, visible, width, height: CURTAIN_HEIGHT, pixelRatio: scale }}

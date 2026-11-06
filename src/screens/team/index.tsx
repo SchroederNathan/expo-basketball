@@ -1,6 +1,7 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Platform, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { useTeam } from '@/api/queries';
 import type { RosterPlayer, ScheduleGame, TeamPage } from '@/api/schemas';
 import { DisplayText } from '@/components/display-text';
@@ -11,13 +12,15 @@ import { QueryFallback } from '@/components/query-fallback';
 import { RefreshError } from '@/components/refresh-error';
 import { RowLink } from '@/components/row-link';
 import { SectionLabel } from '@/components/section-label';
-import { TeamBackdrop } from '@/components/team-backdrop';
 import { TeamLogo } from '@/components/team-logo';
 import type { TeamRef } from '@/domain/ids';
 import type { League } from '@/domain/league';
 import { gameHref, parseTeamParams, playerHref } from '@/navigation/hrefs';
+import { GameCurtain } from '@/screens/game/curtain';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, radius, space, typography } from '@/theme';
+
+const AnimatedSectionList = Animated.createAnimatedComponent(SectionList<Row, Section>);
 
 type Row =
   | { readonly kind: 'game'; readonly key: string; readonly game: ScheduleGame }
@@ -136,14 +139,29 @@ export function TeamScreen() {
 function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
   const { zone } = useCalendar();
   const headerHeight = useHeaderHeight();
+  const focused = useIsFocused();
   const team = useTeam({ ref: teamRef, zone });
   const { state } = team;
   const page = state.kind === 'ready' ? state.data : null;
   const ios = Platform.OS === 'ios';
+  const scrollY = useSharedValue(0);
+  // The iOS automatic navigation inset is not included in scroll event contentInset.
+  const insetTop = ios ? headerHeight : 0;
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.set(event.contentOffset.y + insetTop);
+  });
   return (
     <Screen>
       <Stack.Screen options={{ title: page?.team.name ?? 'Team', headerTransparent: true }} />
-      <SectionList
+      <GameCurtain
+        palette={page ? { kind: 'team', color: page.team.accent } : null}
+        active={focused}
+        contentOriginY={headerHeight}
+        scrollY={scrollY}
+      />
+      <AnimatedSectionList
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         style={styles.list}
         contentInsetAdjustmentBehavior="automatic"
         sections={page ? pageSections(page) : []}
@@ -159,12 +177,7 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
         renderSectionHeader={({ section }) => <SectionLabel>{section.title}</SectionLabel>}
         ListHeaderComponent={
           <View style={{ paddingTop: ios ? 0 : headerHeight }}>
-            {page ? (
-              <>
-                <TeamBackdrop backdrop={{ kind: 'team', color: page.team.accent }} top={ios ? -headerHeight : 0} />
-                <TeamHeader page={page} />
-              </>
-            ) : null}
+            {page ? <TeamHeader page={page} /> : null}
             {state.kind === 'ready' && state.refreshError ? (
               <RefreshError error={state.refreshError} onRetry={team.retry} />
             ) : null}
@@ -192,7 +205,6 @@ function TeamDetail({ teamRef }: { teamRef: TeamRef }) {
 const styles = StyleSheet.create({
   list: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     alignItems: 'center',

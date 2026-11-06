@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { mountCurtain, type CurtainSurface, type RenderInput } from './renderer';
 
 const input: RenderInput = {
-  palette: { away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 402, height: 688, pixelRatio: 2,
+  palette: { kind: 'matchup', away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 402, height: 688, pixelRatio: 2,
 };
 
 function unavailableSurface(acquire: CurtainSurface['acquire']): CurtainSurface {

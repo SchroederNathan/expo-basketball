@@ -120,7 +120,7 @@ function GameDetail({ gameRef }: { gameRef: GameRef }) {
         }}
       />
       <GameCurtain
-        palette={game ? { away: game.away.accent, home: game.home.accent } : null}
+        palette={game ? { kind: 'matchup', away: game.away.accent, home: game.home.accent } : null}
         active={focused}
         contentOriginY={headerHeight}
         scrollY={scrollY}

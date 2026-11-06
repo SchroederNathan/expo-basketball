@@ -1,6 +1,8 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { usePlayer } from '@/api/queries';
+import { Stack, useIsFocused, useLocalSearchParams } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { Platform, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
+import { usePlayer, useTeams } from '@/api/queries';
 import type { GameLogRow, PlayerPage } from '@/api/schemas';
 import { Chevron } from '@/components/chevron';
 import { Screen } from '@/components/screen';
@@ -16,6 +18,7 @@ import { TeamLogo } from '@/components/team-logo';
 import type { PlayerRef } from '@/domain/ids';
 import type { League } from '@/domain/league';
 import { gameHref, parsePlayerParams, teamHref } from '@/navigation/hrefs';
+import { GameCurtain } from '@/screens/game/curtain';
 import { useCalendar } from '@/state/calendar';
 import { colors, layout, radius, space, typography } from '@/theme';
 
@@ -140,17 +143,48 @@ export function PlayerScreen() {
 
 function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
   const { zone } = useCalendar();
+  const headerHeight = useHeaderHeight();
+  const focused = useIsFocused();
   const player = usePlayer({ ref: playerRef, zone });
   const { state } = player;
+  // The player page names the team but not its colors. The teams index has
+  // them, and the Teams tab usually has it cached already.
+  const teams = useTeams({ league: playerRef.league });
+  const teamId = state.kind === 'ready' ? state.data.player.team?.id : undefined;
+  const accent = teams.state.kind === 'ready' && teamId
+    ? teams.state.data.teams.find((team) => team.id === teamId)?.accent
+    : undefined;
+  const ios = Platform.OS === 'ios';
+  const scrollY = useSharedValue(0);
+  // The iOS automatic navigation inset is not included in scroll event contentInset.
+  const insetTop = ios ? headerHeight : 0;
+  const onScroll = useAnimatedScrollHandler((event) => {
+    scrollY.set(event.contentOffset.y + insetTop);
+  });
   return (
     <Screen>
-      <Stack.Screen options={{ title: state.kind === 'ready' ? state.data.player.name : 'Player' }} />
-      <ScrollView
+      <Stack.Screen
+        options={{ title: state.kind === 'ready' ? state.data.player.name : 'Player', headerTransparent: true }}
+      />
+      <GameCurtain
+        palette={accent ? { kind: 'team', color: accent } : null}
+        active={focused}
+        contentOriginY={headerHeight}
+        scrollY={scrollY}
+      />
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         style={styles.screen}
         contentInsetAdjustmentBehavior="automatic"
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingTop: ios ? 0 : headerHeight }]}
         refreshControl={
-          <RefreshControl refreshing={player.refreshing} onRefresh={player.refresh} tintColor={colors.textTertiary} />
+          <RefreshControl
+            refreshing={player.refreshing}
+            onRefresh={player.refresh}
+            tintColor={colors.textTertiary}
+            progressViewOffset={ios ? 0 : headerHeight}
+          />
         }
       >
         {state.kind === 'ready' ? (
@@ -169,7 +203,7 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
         ) : (
           <QueryFallback state={state} subject="This player" onRetry={player.retry} />
         )}
-      </ScrollView>
+      </Animated.ScrollView>
     </Screen>
   );
 }
@@ -177,7 +211,6 @@ function PlayerDetail({ playerRef }: { playerRef: PlayerRef }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
     paddingBottom: space.xxxl,

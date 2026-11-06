@@ -1,6 +1,10 @@
-export type Palette = Readonly<{ away: string; home: string }>;
+// A game lights the fabric from both sides, one team per side. A team or
+// player page washes one team's color down from the top.
+export type Palette =
+  | Readonly<{ kind: 'matchup'; away: string; home: string }>
+  | Readonly<{ kind: 'team'; color: string }>;
 type Color = readonly [number, number, number, number];
-type Colors = Readonly<{ away: Color; home: Color }>;
+type Colors = Readonly<{ away: Color; home: Color; fromTop: number }>;
 type Transition = Readonly<{ from: Colors; to: Colors; started: number }>;
 
 export const CURTAIN_HEIGHT = 688;
@@ -11,6 +15,20 @@ export const INDEX_COUNT = 96 * 164 * 6;
 function color(hex: string): Color {
   const value = Number.parseInt(hex.slice(1), 16);
   return [((value >> 16) & 255) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255, 1];
+}
+
+export function samePalette(a: Palette | null, b: Palette | null): boolean {
+  if (a === null || b === null) return a === b;
+  if (a.kind === 'team') return b.kind === 'team' && a.color === b.color;
+  return b.kind === 'matchup' && a.away === b.away && a.home === b.home;
+}
+
+function colorsOf(palette: Palette): Colors {
+  if (palette.kind === 'team') {
+    const team = color(palette.color);
+    return { away: team, home: team, fromTop: 1 };
+  }
+  return { away: color(palette.away), home: color(palette.home), fromTop: 0 };
 }
 
 function mix(from: Color, to: Color, t: number): Color {
@@ -28,6 +46,7 @@ function at(transition: Transition, now: number): Colors {
   return {
     away: mix(transition.from.away, transition.to.away, blend),
     home: mix(transition.from.home, transition.to.home, blend),
+    fromTop: transition.from.fromTop + (transition.to.fromTop - transition.from.fromTop) * blend,
   };
 }
 
@@ -44,8 +63,8 @@ export class FabricFrame {
   }
 
   update(palette: Palette | null, animated: boolean, ready: boolean, now: number): void {
-    if (palette && (palette.away !== this.target?.away || palette.home !== this.target?.home)) {
-      const to = { away: color(palette.away), home: color(palette.home) };
+    if (palette && !samePalette(palette, this.target)) {
+      const to = colorsOf(palette);
       const from = animated && ready && this.transition ? at(this.transition, now) : to;
       this.transition = { from, to, started: now };
       this.target = palette;
@@ -71,6 +90,7 @@ export class FabricFrame {
     u[4] = pointWidth;
     if (this.transition) {
       const colors = at(this.transition, now);
+      u[3] = colors.fromTop;
       u.set(colors.away, 8);
       u.set(colors.home, 12);
     }

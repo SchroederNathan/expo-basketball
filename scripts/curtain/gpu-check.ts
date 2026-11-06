@@ -45,7 +45,7 @@ export async function checkCurtainGpu(): Promise<string[]> {
     },
     present: () => { presented++; },
   };
-  const input: RenderInput = { palette: { away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 256, height: 688, pixelRatio: 1 };
+  const input: RenderInput = { palette: { kind: 'matchup', away: '#FF0000', home: '#0000FF' }, animate: true, visible: true, width: 256, height: 688, pixelRatio: 1 };
   const owner = mountCurtain(surface, input, () => ready++, () => fallback++, clock);
   await Promise.resolve();
   expect(owner.status === 'ready', 'Acquisition should prepare the real pipeline.');
@@ -106,7 +106,7 @@ export async function checkCurtainGpu(): Promise<string[]> {
   results.push('Active wind changes pixels; hidden and reduced motion preserve pixels and stop scheduling.');
 
   time = 80000;
-  owner.update({ ...input, animate: false, palette: { away: '#0000FF', home: '#FF0000' } });
+  owner.update({ ...input, animate: false, palette: { kind: 'matchup', away: '#0000FF', home: '#FF0000' } });
   frame(time);
   const changed = await pixels();
   expect(changed[left + 2] > changed[left], 'A changed reduced-motion palette must draw immediately.');
@@ -119,7 +119,7 @@ export async function checkCurtainGpu(): Promise<string[]> {
   expect(Number(ready) === 1 && fallback === 0, 'Refresh and resize must preserve readiness.');
   results.push('Static palette changes, null retention and DPR resizing passed without recreating the owner.');
 
-  const recoveryInput = { ...input, palette: { away: '#0000FF', home: '#FF0000' }, width: 128, pixelRatio: 2 };
+  const recoveryInput: RenderInput = { ...input, palette: { kind: 'matchup', away: '#0000FF', home: '#FF0000' }, width: 128, pixelRatio: 2 };
   owner.update(recoveryInput);
   frame(time);
   const beforeLoss = await pixels();
